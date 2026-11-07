@@ -17,7 +17,7 @@ BLA makes a build hard to read for an AI agent. It plants decoy code, floods REA
 
 ```bash
 bun install
-bun run scan ./app            # trap score and findings, JSON
+# tools land one per pull request: scan, sanitize, fold, cover, run
 ```
 
 Add `skills/anti-bla` to your agent. REA runs then call the skill when they see a trigger:

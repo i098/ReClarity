@@ -5,7 +5,6 @@
   "description": "Anti-BLA: keeps REA working on BLA-hardened builds",
   "type": "module",
   "scripts": {
-    "scan": "bun skills/anti-bla/scripts/scan.ts",
     "test": "bun test"
   }
 }

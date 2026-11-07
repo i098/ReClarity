@@ -20,7 +20,7 @@ bun install
 # tools land one per pull request: scan, sanitize, fold, cover, run
 ```
 
-Add `skills/anti-bla` to your agent. REA runs then call the skill when they see a trigger:
+The `skills/anti-bla` skill is planned and not in this repo yet. When it lands, REA runs will call it on these triggers:
 
 - a REA capacity error (`resourceLimits`, ASAR header, fuse sentinel limit),
 - words such as `enclave`, `attestation`, `TEE` in findings,
@@ -40,7 +40,7 @@ Add `skills/anti-bla` to your agent. REA runs then call the skill when they see 
 | Runtime guard (CDP, Frida) | Compare attached and not attached runs |
 | Python `.pyc` tarpit | `coverage.py` in the sandbox |
 
-Full table, risks and diagrams: [docs/index.md](docs/index.md).
+Planned technique table and risks: [docs/index.md](docs/index.md).
 
 ## Use
 

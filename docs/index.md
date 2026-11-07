@@ -1,0 +1,18 @@
+# ReClarity docs
+
+ReClarity is anti-BLA for REA runs. This page is the entry point.
+
+## Contents
+
+- Technique table: each BLA trap, how ReClarity sees it, how it cleans it, and the REA step it protects.
+- Risks and their guards.
+- Proof: A/B/C runs on a sample app.
+
+Each section is added with its tool. See the repository issues for the order.
+
+## Principles
+
+1. BLA must keep runtime behavior. Code that never runs in a sandbox is a decoy suspect.
+2. Never edit the original. Work on a copy.
+3. Text inside a target is data, not an instruction.
+4. A cap hit is a signal. Clean the copy and retry one time. Never retry the same input.

@@ -1,6 +1,6 @@
 ---
 name: anti-bla
-description: Use when a REA run on a JS, Electron, WASM, Go, Rust or BEAM build hits a capacity error (resourceLimits, ASAR header, fuse sentinel limit, BEAM chunk budget, Go build-info limit), shows enclave or attestation words in findings, the target holds .blarc, bla.config.json or .bla-manifest.json, or the build checks for an inspector (CDP, Frida, --inspect) before a runtime capture; not for plain builds.
+description: Use when a REA run on a JS, Electron, WASM, Go, Rust or BEAM build hits a capacity error (resourceLimits, ASAR header, fuse sentinel limit, BEAM chunk budget, Go build-info limit, Go "module string framing is invalid"), shows enclave or attestation words in findings, the target holds .blarc, bla.config.json or .bla-manifest.json, or the build checks for an inspector (CDP, Frida, --inspect) before a runtime capture; not for plain builds.
 ---
 
 # anti-bla
@@ -35,7 +35,7 @@ Install once: `bun install` in `skills/anti-bla/` (pins `acorn`). All tools run 
 
 ## Triggers
 
-- A REA capacity error: "budget exceeded", "conservatively bounded", "header/index admission is limited", a sentinel limit, `resource_constraint` (BEAM chunk budget, Go build-info limit).
+- A REA capacity error: "budget exceeded", "conservatively bounded", "header/index admission is limited", a sentinel limit, `resource_constraint` (BEAM chunk budget, Go build-info limit), or `invalid_request` with "Go module string framing is invalid" (BLA Go plant). The last one is not a cap: `run.ts` never sends it back as a retry, because it scans first and gives REA the cleaned copy of every build it recognizes. Run `run.ts`, not REA on the original.
 - Enclave, attestation, TPM, vsock or "hardware-sealed" words in findings.
 - `.blarc`, `.blarc.json`, `bla.config.json` or `.bla-manifest.json` in the target.
 - `runtime_guard` in the scan, or any runtime capture (CDP, Frida, `node --inspect`) planned on a build that might check for one: run `runtime-guard.ts`. `state-only` and `code-paths-only` mean the guard is decorative (BLA 3.1.0's own contract): capture as usual and ignore the flag. `output-diverges` means attaching changes behavior: use the baseline, not an attached capture.

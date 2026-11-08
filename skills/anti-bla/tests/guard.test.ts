@@ -118,6 +118,13 @@ describe("run wrapper", () => {
     });
   });
 
+  test("a recognized Go balanced build reaches REA already cleaned: a REA that rejects the BLA plant passes on the first attempt", () => {
+    const rea = "if grep -q BLA-GO-MAPPED {target}; then echo '{\"code\":\"invalid_request\",\"message\":\"Go module string framing is invalid\"}'; exit 1; fi";
+    const r = run(join(FIXTURES, "go.bla.elf"), { work: join(tmp, "w5go"), rea });
+    expect(r.verdict).toBe("cleaned");
+    expect(r.attempts.map((a) => a.exitCode)).toEqual([0]);
+  });
+
   test("a capacity error on an ASAR target ends in a report, not a crash", () => {
     const asar = join(tmp, "app.asar");
     writeFileSync(asar, floodAsar(150));

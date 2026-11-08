@@ -5,6 +5,7 @@ import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { openAsar } from "./lib/asar.ts";
 import { REA_MAX_SENTINELS, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
+import { countStrongMarkers } from "./lib/guard-markers.ts";
 import { findSeeds, opaqueValue, parseJs, walk, type AnyNode, type Program } from "./lib/js.ts";
 
 export const BLA_VERSION = "3.1.0";
@@ -40,6 +41,7 @@ const RULES: Record<string, { weight: number; min: number }> = {
   string_doubling: { weight: 10, min: 1 },
   keepalive_array: { weight: 10, min: 1 },
   decoy_ipc: { weight: 10, min: 1 },
+  runtime_guard: { weight: 10, min: 1 },
   bait_text: { weight: 15, min: 1 },
   enclave_words: { weight: 5, min: 10 },
 };
@@ -114,6 +116,7 @@ function scanJs(src: string, label: string, acc: Acc): void {
   acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
   acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
   acc.add("decoy_ipc", label, src.match(DECOY_IPC)?.length ?? 0);
+  acc.add("runtime_guard", label, countStrongMarkers(src));
   let ast: Program;
   try {
     ast = parseJs(src);

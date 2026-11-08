@@ -39,6 +39,7 @@ For the tests, run `bun install` at the repo root, then `bun test`.
 bun skills/anti-bla/scripts/scan.ts <target>            # score 0-100, reads only
 bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-javascript-application {target}"
 bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "..." --coverage   # plain JS only
+bun skills/anti-bla/scripts/runtime-guard.ts <target>   # JS, Electron main or .asar: run with and without inspector signals, report what differs
 ```
 
 `run.ts` scans, cleans a copy, runs REA under the caps and retries once on a capacity error.
@@ -49,7 +50,7 @@ REA runs call the skill on these triggers:
 - words such as `enclave`, `attestation`, `TPM`, `vsock` or `hardware-sealed` in findings,
 - `.blarc`, `.blarc.json`, `bla.config.json` or `.bla-manifest.json` in the target.
 
-Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `guard`, `run`, `bench`. See [docs/architecture.md](docs/architecture.md). Rules for the agent: [skills/anti-bla/SKILL.md](skills/anti-bla/SKILL.md).
+Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `runtime-guard`, `guard`, `run`, `bench`. See [docs/architecture.md](docs/architecture.md). Rules for the agent: [skills/anti-bla/SKILL.md](skills/anti-bla/SKILL.md).
 
 ## BLA techniques it handles
 
@@ -62,7 +63,7 @@ Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `guard`, `run`, `bench`. See [
 | Electron IPC decoys | Plain JS only: keep channels that fire (`coverage`, not for ASAR) |
 | ASAR header and fuse flood | Raise `REA_ASAR_MAX_HEADER_BYTES`, strip decoy entries and sentinels |
 | WASM, SQLite, model, Go, Rust, BEAM caps | Planned: clean copy per format (after JS and Electron) |
-| Runtime guard (CDP, Frida) | Planned: compare attached and not attached runs |
+| Runtime guard (CDP, Frida, `--inspect`) | Built: `runtime-guard.ts` runs the build in the sandbox with nothing attached, then once per inspector signal, and reports the output, IPC, file and code-path differences. The not-attached run is the observation |
 | Python `.pyc` tarpit | Planned: `coverage.py` in the sandbox |
 
 Full table: [docs/techniques.md](docs/techniques.md). Risks: [docs/risks.md](docs/risks.md).

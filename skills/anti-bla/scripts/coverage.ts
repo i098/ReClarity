@@ -47,14 +47,20 @@ export interface CoverageReport {
 }
 
 export const TRAP = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST|delegatedToEnclave|fallbackStub|hardware-sealed|attestation/i;
-const SANDBOX_DIR = "/app";
+export const SANDBOX_DIR = "/app";
 
-function bwrapArgs(app: string, cov: string, driver: string | undefined, entry: string): string[] {
+/** bwrap prefix every sandboxed run shares: no network, read-only system and node tree, no env. */
+export function sandboxBase(): { node: string; args: string[] } {
   const node = realpathSync(process.execPath.endsWith("bun") ? Bun.which("node") ?? "" : process.execPath);
   const nodeRoot = dirname(dirname(node));
-  const a = ["--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib"];
-  if (existsSync("/lib64")) a.push("--ro-bind", realpathSync("/lib64"), "/lib64");
-  if (!nodeRoot.startsWith("/usr")) a.push("--ro-bind", nodeRoot, nodeRoot);
+  const args = ["--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib"];
+  if (existsSync("/lib64")) args.push("--ro-bind", realpathSync("/lib64"), "/lib64");
+  if (!nodeRoot.startsWith("/usr")) args.push("--ro-bind", nodeRoot, nodeRoot);
+  return { node, args };
+}
+
+function bwrapArgs(app: string, cov: string, driver: string | undefined, entry: string): string[] {
+  const { node, args: a } = sandboxBase();
   a.push("--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--ro-bind", app, SANDBOX_DIR, "--bind", cov, "/cov");
   if (driver) a.push("--ro-bind", driver, "/driver.js");
   a.push("--setenv", "PATH", `${dirname(node)}:/usr/bin:/bin`, "--setenv", "HOME", "/tmp", "--setenv", "NODE_V8_COVERAGE", "/cov", "--setenv", "ANTI_BLA_TARGET", `${SANDBOX_DIR}/${entry}`);
@@ -62,7 +68,7 @@ function bwrapArgs(app: string, cov: string, driver: string | undefined, entry: 
   return a;
 }
 
-function mainOf(dir: string): string {
+export function mainOf(dir: string): string {
   const pkg = join(dir, "package.json");
   if (!existsSync(pkg)) return "index.js";
   const main: unknown = JSON.parse(readFileSync(pkg, "utf8")).main;
@@ -99,7 +105,7 @@ interface V8Script {
 }
 
 /** Per file: byte -> hit, merged over every process the run started. Painted outer to inner. */
-function loadCounts(covDir: string, size: Map<string, number>): Map<string, Uint8Array> {
+export function loadCounts(covDir: string, size: Map<string, number>): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
   for (const f of readdirSync(covDir)) {
     if (!f.endsWith(".json") || !lstatSync(join(covDir, f)).isFile()) continue; // the sandbox writes here: never follow a link out of it
@@ -130,7 +136,7 @@ function loadCounts(covDir: string, size: Map<string, number>): Map<string, Uint
   return out;
 }
 
-const jsFiles = (root: string, rel = ""): string[] =>
+export const jsFiles = (root: string, rel = ""): string[] =>
   readdirSync(join(root, rel), { withFileTypes: true }).flatMap((e) =>
     e.name === "node_modules" ? [] : e.isDirectory() ? jsFiles(root, join(rel, e.name)) : e.isFile() && /\.(c|m)?js$/.test(e.name) ? [join(rel, e.name)] : [],
   );

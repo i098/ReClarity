@@ -24,6 +24,13 @@ describe("scan", () => {
     expect(r.findings.find((f) => f.id === "opaque_predicate")!.count).toBeGreaterThan(30);
   });
 
+  test("runtime guard: BLA's guard names fire, an app that reads execArgv or NODE_OPTIONS does not", () => {
+    expect(ids(scan(join(FIXTURES, "main.bla.js")))).toContain("runtime_guard");
+    const f = join(tmp, "weak-markers.js");
+    writeFileSync(f, "const dbg = process.execArgv.includes('--inspect') || !!process.env.NODE_OPTIONS || !!globalThis.navigator?.webdriver;\nconsole.log(dbg);\n");
+    expect(ids(scan(f))).not.toContain("runtime_guard");
+  });
+
   test("shape detection survives renamed identifiers and stripped bait text", () => {
     const src = readFileSync(join(FIXTURES, "main.bla.js"), "utf8")
       .replace(/runtimeSeedTransientSensor_cf61/g, "q")

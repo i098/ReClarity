@@ -55,10 +55,8 @@ interface Span {
 }
 
 interface Scan {
-  /** Bytes in front of the first span that are always kept (the classic global header). */
-  head: number;
   spans: Span[];
-  /** Where parsing stopped; a truncated last record or block is left out. */
+  /** Where parsing stopped; a truncated last record is left out. */
   stop: number;
 }
 
@@ -73,7 +71,7 @@ function classicRecords(buf: Buffer, layout: PcapLayout): Scan {
     spans.push({ start: at, end, shield: isShieldFrame(buf.subarray(at + 16, end)) });
     at = end;
   }
-  return { head: 24, spans, stop: at };
+  return { spans, stop: at };
 }
 
 function shieldSpans(buf: Buffer): Scan | undefined {
@@ -92,6 +90,6 @@ export function cleanPcap(buf: Buffer): PcapResult | undefined {
   const s = shieldSpans(buf);
   const bad = s?.spans.filter((r) => r.shield);
   if (!s || !bad?.length) return undefined;
-  const keep = [buf.subarray(0, s.head), ...s.spans.filter((r) => !r.shield).map((r) => buf.subarray(r.start, r.end)), buf.subarray(s.stop)];
+  const keep = [buf.subarray(0, 24), ...s.spans.filter((r) => !r.shield).map((r) => buf.subarray(r.start, r.end)), buf.subarray(s.stop)];
   return { buffer: Buffer.concat(keep), kept: s.spans.length - bad.length, dropped: bad.length, droppedBytes: bad.reduce((n, r) => n + r.end - r.start, 0) };
 }

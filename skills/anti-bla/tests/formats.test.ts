@@ -108,6 +108,14 @@ describe("PCAP", () => {
     expect(cleanPcap(withMention)).toBeUndefined();
   });
 
+  test("a capture of only BLA frames is cleaned to a header, with a note that the original is gone", () => {
+    const bla = readFixture("app.bla.pcap");
+    put("rb/x.pcap", Buffer.concat([bla.subarray(0, 24), bla.subarray(24 + 16 + 60)])); // the fixture's first record is the real one
+    const r = sanitize(join(tmp, "rb"), join(tmp, "rb-out"));
+    expect(readFileSync(join(tmp, "rb-out/x.pcap"))).toHaveLength(24);
+    expect(r.actions[0]?.detail).toContain("cannot be recovered");
+  });
+
   test("a truncated capture is not cleaned", () => {
     expect(cleanPcap(readFixture("app.bla.pcap").subarray(0, 50))).toBeUndefined();
   });

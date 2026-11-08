@@ -10,7 +10,7 @@ export interface PruneStats {
 }
 
 /** Identifier uses that read or write a binding; property names and labels are not uses. */
-function uses(n: AnyNode, out: string[] = []): string[] {
+export function uses(n: AnyNode, out: string[] = []): string[] {
   switch (n.type) {
     case "Identifier":
       out.push(n.name);
@@ -102,7 +102,7 @@ interface Decl {
   isState: boolean;
 }
 
-const isKeepAlive = (st: AnyNode): boolean =>
+export const isKeepAlive = (st: AnyNode): boolean =>
   st.type === "ExpressionStatement" &&
   st.expression.type === "UnaryExpression" &&
   st.expression.operator === "void" &&

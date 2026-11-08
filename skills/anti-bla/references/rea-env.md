@@ -25,6 +25,11 @@ These cannot be raised. The answer is a clean copy.
 | `getter-expansion` | 512 scheduled states | `getter_ring` |
 | `alias-selections` | 512 additional selector states | `selector_pyramid` (4,194,304 states at `bankrupt`) |
 | Electron fuse sentinels per slice | 32 | `fuse_decoy` (34 decoys beside the real block) |
+| Safetensors JSON nesting, GGUF metadata array frames | 32 | `model_nesting_breaker` (depth 33+) |
+| Flutter snapshot hash candidates | 64 (and 500 pool URIs, 2000 tokens) | `dart_pool_decoy` (66 fake records, 516 URIs) |
+| EVM input | 4 MiB (a hex carrier counts its characters) | `evm_trailer` (JUMPDEST filler up to the limit) |
+| tshark JSON for a capture | 8 MiB | `pcap_flood` (not reproduced as an error on the proof fixture, see `docs/proof.md`) |
+| SQLite inspection | none hit on the proof fixture | `sqlite_honey` (REA lists the honey tables as schema) |
 | WASM interface representation | 32 MiB charged | `wasm_export_flood` (alias exports with 1 KiB names, `inspect_wasm_artifact`) |
 | `inspect_erlang_beam` chunks and atoms | 64 and 4096 (settable per call, `--max-chunks`, `--max-atoms`) | `beam_chunk_flood` |
 | Go build info | 1 MiB of version and module strings | `go_buildinfo_flood` |

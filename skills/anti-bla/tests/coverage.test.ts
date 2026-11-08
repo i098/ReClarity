@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coverage, quarantineCopy } from "../scripts/coverage.ts";
@@ -92,6 +92,25 @@ module.exports = 1;
     expect(r.exitCode).not.toBe(0);
     expect(fixtureTargets(r)).toEqual([]);
     expect(r.notes.join(" ")).toContain("coverage labels unreliable, no fixtures built");
+    const g = app("crash-quarantine", "const { app } = require('electron');\nfunction shadow() { return 'ENCLAVE-ATTESTATION-GUARD'; }\nvoid shadow;\nmodule.exports = 1;\n");
+    const rep = coverage(g);
+    expect(rep.exitCode).not.toBe(0);
+    expect(rep.counts.decoy_suspect).toBeGreaterThan(0);
+    const out = join(tmp, "crash-out");
+    expect(quarantineCopy(g, rep, out).removed).toBe(0);
+    expect(readFileSync(join(out, "main.js"), "utf8")).toBe(readFileSync(g, "utf8"));
+    expect(existsSync(`${out}.quarantine.json`)).toBe(false);
+  });
+
+  test("a report from a run that timed out quarantines nothing", () => {
+    const f = app("timeout-quarantine", "function shadow() { return 'ENCLAVE-ATTESTATION-GUARD'; }\nvoid shadow;\nmodule.exports = 1;\n");
+    const rep = coverage(f);
+    expect(rep.counts.decoy_suspect).toBeGreaterThan(0);
+    const out = join(tmp, "timeout-out");
+    expect(quarantineCopy(f, { ...rep, timedOut: true }, out).removed).toBe(0);
+    expect(readFileSync(join(out, "main.js"), "utf8")).toBe(readFileSync(f, "utf8"));
+    expect(existsSync(`${out}.quarantine.json`)).toBe(false);
+    expect(quarantineCopy(f, rep, join(tmp, "clean-out")).removed).toBeGreaterThan(0);
   });
 
   test("target stderr in the crash note is wrapped as data and cannot close the wrapper", () => {

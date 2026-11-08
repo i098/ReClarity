@@ -74,6 +74,18 @@ describe("fold-js keeps behavior it cannot prove unchanged", () => {
     expect(load(foldJs(code2).code).ready!()).toBe(true);
   });
 
+  test("a call to a function that writes through `this` is kept", () => {
+    const code = `${seed}function setup() { this.antiBlaThisProbe = true; }\nsetup();\nmodule.exports = { f: () => 1 };\n`;
+    load(foldJs(code).code);
+    expect((globalThis as Record<string, unknown>).antiBlaThisProbe).toBe(true);
+    delete (globalThis as Record<string, unknown>).antiBlaThisProbe;
+  });
+
+  test("a call whose default parameter value has an outside effect is kept", () => {
+    const code = `${seed}let c = 0;\nfunction bump(a = c++) {}\nbump();\nmodule.exports = { get: () => c };\n`;
+    expect(load(foldJs(code).code).get!()).toBe(1);
+  });
+
   test("a name that is rebound or not const is never treated as a seed", () => {
     const shadowed = "const flags = Number(process.argv[2]) | 1;\nfunction check(flags) { if ((flags & 1) === 1) return 'odd'; return 'even'; }\nmodule.exports = { check };\n";
     expect(load(foldJs(shadowed).code).check!(2)).toBe("even");

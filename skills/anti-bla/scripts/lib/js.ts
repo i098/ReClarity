@@ -65,7 +65,7 @@ function byteMasked(x: AnyNode): boolean {
   return false;
 }
 
-function patternNames(p: AnyNode | null | undefined, out: string[]): void {
+export function patternNames(p: AnyNode | null | undefined, out: string[]): void {
   if (!p) return;
   if (p.type === "Identifier") out.push(p.name);
   else if (p.type === "ObjectPattern") for (const q of p.properties) patternNames(q.type === "RestElement" ? q.argument : q.value, out);

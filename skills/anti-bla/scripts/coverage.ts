@@ -179,7 +179,7 @@ export function coverage(target: string, opts: RunOptions = {}): CoverageReport 
     const files: FileCoverage[] = [...sources].filter(([k]) => hits.has(k)).map(([k, v]) => ({ file: k, statements: classify(v, hits.get(k)) }));
     const counts: Record<Kind, number> = { run: 0, not_run: 0, decoy_suspect: 0, bait_ran: 0 };
     for (const f of files) for (const s of f.statements) counts[s.kind]++;
-    const notes = [...(run.timedOut ? ["run hit the time limit; statements after it may show as not run"] : []), ...(run.exitCode !== 0 ? [`target exited with ${run.exitCode ?? "a signal"}; coverage labels unreliable, no fixtures built: ${asData(run.stderr.split("\n")[0] ?? "", "target-stderr")}`] : [])];
+    const notes = [...(run.timedOut ? ["run hit the time limit; statements after it may show as not run, nothing quarantined"] : []), ...(run.exitCode !== 0 ? [`target exited with ${run.exitCode ?? "a signal"}; coverage labels unreliable, no fixtures built, nothing quarantined: ${asData(run.stderr.split("\n")[0] ?? "", "target-stderr")}`] : [])];
     if (!files.length) notes.push("no covered files: the target never loaded; nothing is marked decoy");
     return { tool: "anti-bla/coverage", target, exitCode: run.exitCode, timedOut: run.timedOut, files, counts, notes };
   } finally {
@@ -187,7 +187,7 @@ export function coverage(target: string, opts: RunOptions = {}): CoverageReport 
   }
 }
 
-/** Copy `target` to `out`, minus decoy-suspect statements; they go whole into `<out>.quarantine.json`, beside the copy and never inside it (written only when there are any). */
+/** Copy `target` to `out`, minus decoy-suspect statements; they go whole into `<out>.quarantine.json`, beside the copy and never inside it (written only when there are any). A run that crashed or timed out quarantines nothing. */
 export function quarantineCopy(target: string, report: CoverageReport, out: string): { removed: number } {
   const abs = resolve(target);
   const isDir = statSync(abs).isDirectory();
@@ -197,7 +197,8 @@ export function quarantineCopy(target: string, report: CoverageReport, out: stri
   cpSync(abs, isDir ? out : join(out, basename(abs)), { recursive: true, filter: (s) => s === abs || !lstatSync(s).isSymbolicLink() }); // files without coverage ride along; covered JS is rewritten below
   for (const f of report.files) {
     let src = readFileSync(join(root, f.file), "utf8");
-    for (const s of f.statements.filter((x) => x.kind === "decoy_suspect").sort((a, b) => b.start - a.start)) {
+    const suspects = report.exitCode === 0 && !report.timedOut ? f.statements.filter((x) => x.kind === "decoy_suspect") : [];
+    for (const s of suspects.sort((a, b) => b.start - a.start)) {
       quarantine.push({ file: f.file, start: s.start, text: src.slice(s.start, s.end) });
       src = src.slice(0, s.start) + src.slice(src[s.end] === "\n" ? s.end + 1 : s.end);
     }

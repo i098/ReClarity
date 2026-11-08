@@ -2,7 +2,7 @@
 // Roots are every statement that is not a plain declaration. A declaration is removed only when no
 // root reaches it. Sink calls (a call whose only effect is mutating private state nobody else reads)
 // are removed first, so the state and the function become unreachable too.
-import { kids, parseJs, reboundNames, walk, type AnyNode, type Program, type Seed } from "./js.ts";
+import { kids, parseJs, patternNames, reboundNames, walk, type AnyNode, type Program, type Seed } from "./js.ts";
 
 export interface PruneStats {
   declarationsRemoved: number;
@@ -38,10 +38,11 @@ export function uses(n: AnyNode, out: string[] = []): string[] {
 
 function declaredIn(fn: AnyNode): Set<string> {
   const names = new Set<string>();
-  const bind = (p: AnyNode) =>
-    walk(p, (x) => {
-      if (x.type === "Identifier") names.add(x.name);
-    });
+  const bind = (p: AnyNode) => {
+    const out: string[] = [];
+    patternNames(p, out);
+    out.forEach((x) => names.add(x));
+  };
   walk(fn, (n) => {
     if (n.type === "VariableDeclarator") bind(n.id);
     else if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression" || n.type === "ArrowFunctionExpression") n.params.forEach(bind);
@@ -153,7 +154,11 @@ function findSinks(decls: Decl[], roots: AnyNode[], rebound: Set<string>): Set<s
     const outside = [...decls.filter((d) => !fns.has(d.name)).map((d) => ({ name: d.name, node: d.node, u: d.uses })), ...roots.map((r) => ({ name: "", node: r, u: uses(r) }))];
     for (const d of decls.filter((x) => fns.has(x.name))) {
       const local = declaredIn(d.node);
-      const escapes = d.uses.some((u) => !local.has(u) && !fns.has(u) && !states.has(u) && u !== "Math" && u !== "undefined");
+      let usesThis = false;
+      walk(d.node, (x) => {
+        if (x.type === "ThisExpression") usesThis = true;
+      });
+      const escapes = usesThis || d.uses.some((u) => !local.has(u) && !fns.has(u) && !states.has(u) && u !== "Math" && u !== "undefined");
       const used = outside.reduce((n, o) => n + o.u.filter((u) => u === d.name).length, 0);
       const dropped = outside.reduce((n, o) => n + callsTo(o.node, d.name), 0);
       if (escapes || used !== dropped) {

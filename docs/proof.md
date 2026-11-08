@@ -51,4 +51,19 @@ REA 6.8.0 has no inspector that finds these guards, so no hardened-vs-cleaned nu
 - It also labels `exit` and `filesystem` as `changed`, but the raw captures hold the same exit (code 0, reason `exited`) and the same `out.txt` hash. I did not find why the labels differ.
 - REA cannot say which code reacted to the attach. `runtime-guard.ts` can, and it also strips Node's banner as noise.
 
-Not run: REA `instrument-with-frida` and `list-frida-processes` (the `frida` Python module and a Frida device are not installed on this host), and a real CDP client such as Chrome DevTools against Electron. The `cdp` and `frida` probes set the globals BLA reads (`__puppeteer_evaluation_script__`, `frida`, `_frida_`); they are not a real debugger. A guard that checks something else (timing, `/proc/self/status` `TracerPid`) would not fire. I found no such check in the BLA 3.1.0 runtime shields I read.
+### Real Frida and CDP runs
+
+The `cdp` and `frida` probes only set the globals BLA reads. To check them against real tools, `main.bla-seal.js` ran under a wrapper (`w.js`) that requires it and writes the guard's `inspectorObserved` value to `state.json`. Same app, same host, four ways. `out.txt` has the same SHA-256 (`b5bea41b...`) in every run.
+
+| Run | Tool | `state.json` (`inspectorObserved`) | stdout and `out.txt` |
+| --- | --- | --- | --- |
+| Nothing attached | `node w.js` | `false` (`98557895...`) | `license true`, same file |
+| Frida spawn | REA 6.8.0 `instrument-with-frida spawn` (Frida 17.23.2, QJS script, via REA's Node binding) | `false` (`98557895...`) | same |
+| Frida spawn | `frida -f node -l hook.js` (frida-tools, Frida 17.26.2, venv) | `false` (`98557895...`) | same |
+| Real CDP client | `node --inspect-brk`, WebSocket client sends `Runtime.enable`, `Debugger.enable`, `Profiler.enable`, then resumes | `true` (`589aa6b7...`) | same |
+
+- **CDP:** the guard flips because `--inspect-brk` is in `process.execArgv`. I did not run the client without the flag, so I cannot say the client alone changes nothing. Only the one decorative flag changes.
+- **Frida:** the guard does not flip. BLA's own source says Frida's globals live in its isolated Gum realm, not in `globalThis`, and the run agrees. The `frida` probe therefore shows an upper bound, not what a real Frida does to this build. It is the case for a build whose guard reads another Frida signal.
+- **Probe vs real:** `runtime-guard.ts` on the same wrapper (`--entry w.js`) reports `output-diverges` for `inspect`, `remote-debugging`, `cdp` and `frida` through `file:state.json`. For `inspect` and `cdp`, its probed `state.json` is `[["_enclaveRuntimeGateway_27e3",true]]`, the same as the real CDP run. For `frida` the real run stays `false`.
+- **Frida attach to a running node** (`instrument-with-frida attach <pid>`) failed: `Unable to access /proc/<pid>/mem: Permission denied` (`kernel.yama.ptrace_scope=1`, the target is not a child of REA). Spawn works, so spawn is what I ran.
+- Not run: a real CDP client against an Electron window (no display here), and any guard that checks timing or `TracerPid`. I found no such check in the BLA 3.1.0 runtime shields I read.

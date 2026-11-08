@@ -62,7 +62,7 @@ Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `runtime-guard`, `guard`, `run
 | Call-graph maze, crash lures | Cut clusters that no entry reaches |
 | Electron IPC decoys | Plain JS only: keep channels that fire (`coverage`, not for ASAR) |
 | ASAR header and fuse flood | Raise `REA_ASAR_MAX_HEADER_BYTES`, strip decoy entries and sentinels |
-| WASM, Go, Rust, BEAM caps | `sanitize.ts` writes a clean copy: alias exports and decoy sections, Go build-info plant, BLA native trailer, decoy rustc paths, BEAM decoy chunks and atoms |
+| WASM, Go, Rust, BEAM caps | `sanitize.ts` writes a clean copy: alias exports and decoy sections, Go build-info plant, BLA native trailer, decoy rustc paths, BEAM decoy chunks and atoms. Limit: Go balanced intensity rewrites bytes in place, so REA still rejects the cleaned copy (`docs/proof.md`) |
 | Runtime guard (CDP, Frida, `--inspect`) | Built: `runtime-guard.ts` runs the build in the sandbox with nothing attached, then once per inspector signal, and reports the output, IPC, file and code-path differences. The not-attached run is the observation |
 | SQLite, model caps | Planned: clean copy per format |
 | Python `.pyc` tarpit | Planned: `coverage.py` in the sandbox |

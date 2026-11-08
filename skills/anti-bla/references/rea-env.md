@@ -11,7 +11,7 @@ Read from REA 6.8.0 (`src/domain/analysisSettingDefinitions.ts`, `src/domain/jav
 | `--max-heap-mb` | 1024 MiB | see REA | Same command (setting `javascript.max_heap_mb`). Same rule. |
 | `REA_REGEX_MATCHING_DEADLINE_MS`, `REA_REGEX_WORKER_HEAP_REQUEST_MIB` | REA default | see REA | String and procedure search over a decoy-heavy native binary. |
 | `REA_NATIVE_MATCHING_REPRESENTATION_BYTES` | REA default | see REA | Function matching. |
-| `REA_GHIDRA_*`, `REA_HOPPER_*`, `REA_JADX_*` timeouts | REA default | see REA | Native and Android. Out of scope for JS and Electron. |
+| `REA_GHIDRA_*`, `REA_HOPPER_*`, `REA_JADX_*` timeouts | REA default | see REA | Native and Android. Out of scope here. |
 
 ## Not tunable (constants)
 
@@ -25,6 +25,10 @@ These cannot be raised. The answer is a clean copy.
 | `getter-expansion` | 512 scheduled states | `getter_ring` |
 | `alias-selections` | 512 additional selector states | `selector_pyramid` (4,194,304 states at `bankrupt`) |
 | Electron fuse sentinels per slice | 32 | `fuse_decoy` (34 decoys beside the real block) |
+| WASM interface representation | 32 MiB charged | `wasm_export_flood` (alias exports with 1 KiB names, `inspect_wasm_artifact`) |
+| `inspect_erlang_beam` chunks and atoms | 64 and 4096 (settable per call, `--max-chunks`, `--max-atoms`) | `beam_chunk_flood` |
+| Go build info | 1 MiB of version and module strings | `go_buildinfo_flood` |
+| Rust rustc commit hashes | 64 distinct | `rustc_hash_flood` |
 
 The messages these limits print are matched by `isCapacityError` in `scripts/guard.ts`.
 

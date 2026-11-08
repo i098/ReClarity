@@ -7,7 +7,7 @@ Source: [architecture.mmd](architecture.mmd). Re-render with `ondine docs/archit
 | Step | Tool | Writes |
 | --- | --- | --- |
 | Scan | `scripts/scan.ts` | JSON report; reads only |
-| Sanitize | `scripts/sanitize.ts` | clean copy (ASAR, fuses, config files) |
+| Sanitize | `scripts/sanitize.ts` | clean copy (ASAR, fuses, config files, WASM, BEAM, Go, Rust) |
 | Fold | `scripts/fold-js.ts` | copy with folded predicates and pruned dead code |
 | Coverage | `scripts/coverage.ts` | JSON live set; optional copy plus `<copy>.quarantine.json` beside it |
 | Runtime guard | `scripts/runtime-guard.ts` | JSON report only: what differs with and without inspector signals; nothing is written to the target |

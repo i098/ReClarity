@@ -42,9 +42,8 @@ Score is the sum of weights of fired findings, capped at 100. 0 = `none` (plain 
 
 Runtime guard names are fixed literals, not seed-random: a browser global cannot be renamed. BLA 3.1.0 states the guard is decorative (`classification: "decorative-deception-signal"`): attaching sets `inspectorObserved` on a frozen global and changes no output. The one real coupling is `--self-seal`, which folds `NODE_OPTIONS` and `process.execArgv` into the seed digest. BLA masks the digest's low bit (`& 0xfffffffe`) and sets it from a digest-independent check, so the seed's parity does not follow the digest. `runtime-guard.ts` measures both and reports them (`docs/proof.md`).
 
-JS markers are seed-random: BLA 3.1.0 emits no fixed `_bla_` names in JS. Detection is by shape only. The other formats keep literal markers in BLA 3.1.0 and are detected by them. SQLite, models (safetensors, GGUF), PCAP, EVM, Flutter (native binary or APK), WASM, Go, Rust and BEAM and Python are handled.
+JS markers are seed-random: BLA 3.1.0 emits no fixed `_bla_` names in JS. Detection is by shape only. The other formats keep literal markers in BLA 3.1.0 and are detected by them. SQLite, models (safetensors, GGUF), PCAP, EVM, Flutter (native binary or APK), WASM, Go, Rust, BEAM, Python and PyInstaller bundles (their `.pyc` files, read after unpacking) are handled.
 
 ## Not handled yet
 
-- Python decoys inside a PyInstaller bundle.
 - Shapes for EVM, PCAP and Flutter were read from BLA 3.1.0 source and run on BLA's own `dist` output; the bankrupt-size parts were generated with BLA's own functions. BLA 3.1.0 does not write pcapng. The Flutter fixture is BLA's own `protectNativeBinary` output on BLA's `buildMappedGoFlutterElfFixture()`; zeroing its Dart decoys leaves every other byte of the plain ELF, except BLA's Go build-info plant. The model, PCAP and EVM clean copies of BLA's real output equal the plain input byte for byte; the SQLite copy is vacuumed, so it does not.

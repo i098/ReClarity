@@ -1,7 +1,7 @@
-// Python in a bwrap sandbox: the coverage.py run of a target, and the .pyc decoy cleaner.
+// Python in a bwrap sandbox: the coverage.py run of a target, the .pyc decoy cleaner and the PyInstaller extractor.
 // Target code and target bytes are untrusted: they meet an interpreter only inside bwrap
 // (no network, no home, no secrets in env, read-only root). Callers check hasSandbox() first.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -50,22 +50,26 @@ export function pyFacts(root: string, rels: string[]): Record<string, unknown> {
   }
 }
 
-/** A venv that holds coverage.py, made once on first use (the only step that needs the network; target code never runs there). */
-export function coverageVenv(): string {
-  const venv = process.env.ANTI_BLA_PYVENV ?? join(homedir(), ".cache", "anti-bla", "pyvenv");
+/** A venv that holds one pinned pip package, made once on first use (the only step that needs the network; target code never runs there). */
+function toolVenv(venv: string, name: string, pkg: string, check: string): string {
   const py = join(venv, "bin", "python");
-  const have = (): boolean => existsSync(py) && Bun.spawnSync([py, "-c", `import coverage,sys;sys.exit(coverage.__version__!="${COVERAGE_VERSION}")`], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  const have = (): boolean => existsSync(py) && Bun.spawnSync([py, "-c", check], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
   if (have()) return venv;
   const host = Bun.which("python3");
-  if (!host) throw new Error("coverage.py needs python3 on PATH to make its venv");
+  if (!host) throw new Error(`${name} needs python3 on PATH to make its venv`);
   mkdirSync(dirname(venv), { recursive: true });
-  const steps = [[host, "-m", "venv", venv], [py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", `coverage==${COVERAGE_VERSION}`]];
+  const steps = [[host, "-m", "venv", venv], [py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", pkg]];
   for (const s of steps) {
     const r = Bun.spawnSync(s, { stdout: "ignore", stderr: "pipe", timeout: 180_000 });
-    if (r.exitCode !== 0) throw new Error(`could not set up coverage.py in ${venv}: ${r.stderr.toString().trim().split("\n").at(-1) ?? ""}`);
+    if (r.exitCode !== 0) throw new Error(`could not set up ${name} in ${venv}: ${r.stderr.toString().trim().split("\n").at(-1) ?? ""}`);
   }
   return venv;
 }
+
+export const coverageVenv = (): string =>
+  toolVenv(process.env.ANTI_BLA_PYVENV ?? join(homedir(), ".cache", "anti-bla", "pyvenv"), "coverage.py", `coverage==${COVERAGE_VERSION}`, `import coverage,sys;sys.exit(coverage.__version__!="${COVERAGE_VERSION}")`);
+
+const PYINSTXTRACTOR_VERSION = "2026.7.3";
 
 export interface PyRun {
   exitCode: number | null;
@@ -148,4 +152,45 @@ export function cleanPyc(src: string, dst: string): PycOutcome {
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
+}
+
+const PYINSTALLER_COOKIE = Buffer.from("MEI\x0c\x0b\x0a\x0b\x0e", "latin1");
+
+/** A PyInstaller bundle, onefile or onedir: its CArchive cookie sits near the end of the executable. */
+export function isPyInstaller(path: string): boolean {
+  const fd = openSync(path, "r");
+  try {
+    const tail = Buffer.alloc(65536);
+    const n = readSync(fd, tail, 0, tail.length, Math.max(0, statSync(path).size - tail.length));
+    return tail.subarray(0, n).includes(PYINSTALLER_COOKIE);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+export type BundleOutcome = { kind: "extracted"; dir: string; cleanup: () => void } | { kind: "kept"; why: string };
+
+/**
+ * Unpack a PyInstaller bundle with pyinstxtractor-ng inside the sandbox: the CArchive entries and, under `PYZ.pyz_extracted`,
+ * every PYZ member as a .pyc. The extractor parses and decompresses only; it never imports the bundle. Nothing is rebuilt.
+ * shortcut: no cap on the unpacked size (the 120 s limit bounds it); add a quota if a decompression bomb ever matters.
+ */
+export function extractBundle(src: string): BundleOutcome {
+  if (!Bun.which("bwrap")) return { kind: "kept", why: "bwrap not found: the bundle is unpacked only inside the sandbox" };
+  let venv: string;
+  try {
+    venv = realpathSync(toolVenv(process.env.ANTI_BLA_PYXVENV ?? join(homedir(), ".cache", "anti-bla", "pyxvenv"), "pyinstxtractor-ng", `pyinstxtractor-ng==${PYINSTXTRACTOR_VERSION}`, `import importlib.metadata as m,sys;sys.exit(m.version("pyinstxtractor-ng")!="${PYINSTXTRACTOR_VERSION}")`));
+  } catch (e) {
+    return { kind: "kept", why: (e as Error).message };
+  }
+  const py = join(venv, "bin", "python");
+  const out = mkdtempSync(join(tmpdir(), "antibla-pyx-"));
+  const cleanup = (): void => rmSync(out, { recursive: true, force: true });
+  const r = box([...baseArgs(), ...interpreterBinds(py), "--ro-bind", venv, venv, "--ro-bind", src, "/bundle", "--bind", out, "/out", "--chdir", "/out", "--setenv", "PATH", "/usr/bin:/bin", py, "-I", "-m", "pyinstxtractor_ng", "/bundle"], 120);
+  const dir = join(out, "bundle_extracted");
+  if (r.exitCode !== 0 || !existsSync(dir) || !readdirSync(dir).length) {
+    cleanup();
+    return { kind: "kept", why: r.exitCode === 0 ? "the archive holds no entries" : `extractor failed: ${r.stderr.trim().split("\n").at(-1) || "no output"}` };
+  }
+  return { kind: "extracted", dir, cleanup };
 }

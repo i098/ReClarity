@@ -4,9 +4,9 @@
 //   bun run.ts <target> --work <dir> [--rea "rea ... {target}"] [--coverage]
 import { lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { coverage, hasSandbox, quarantineCopy } from "./coverage.ts";
+import { coverage, quarantineCopy } from "./coverage.ts";
 import { foldPath } from "./fold-js.ts";
-import { admit, asData, check, inputHash, isCapacityError, loadLedger, mayRetry, saveLedger, type Ledger } from "./guard.ts";
+import { admit, asData, check, inputHash, isReaCapacityError, loadLedger, mayRetry, saveLedger, type Ledger } from "./guard.ts";
 import { sanitize } from "./sanitize.ts";
 import { scan, type ScanReport } from "./scan.ts";
 
@@ -59,7 +59,7 @@ function runRea(template: string, copy: string, ledger: Ledger): ReaAttempt {
   const cmd = template.replaceAll("{target}", `'${copy.replaceAll("'", "'\\''")}'`);
   const r = Bun.spawnSync(["sh", "-c", cmd], { timeout: left * 1000, killSignal: "SIGKILL", stdout: "pipe", stderr: "pipe" });
   const text = `${r.stdout.toString()}\n${r.stderr.toString()}`;
-  return { copy, exitCode: r.exitCode ?? null, capacityError: r.exitCode !== 0 && isCapacityError(r.stderr.toString()), output: asData(text.slice(-4000), "rea-output") };
+  return { copy, exitCode: r.exitCode ?? null, capacityError: isReaCapacityError(r.exitCode ?? null, r.stdout.toString(), r.stderr.toString()), output: asData(text.slice(-4000), "rea-output") };
 }
 
 export function run(target: string, opts: { work: string; rea?: string; coverage?: boolean }): RunReport {
@@ -77,18 +77,23 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
     let a = runRea(opts.rea, prepared, ledger);
     rep.attempts.push(a);
     if (a.capacityError) {
-      // clean again from the original, with the other settings; the same bytes are refused
-      const second = prepare(target, opts.work, "b", hasSandbox());
-      const v = mayRetry(ledger, treeHash(second));
-      if (v.ok && check(ledger).ok) {
-        admit(ledger, treeHash(second));
-        a = runRea(opts.rea, second, ledger);
-        rep.attempts.push(a);
-        rep.prepared = second;
-        rep.verdict = a.capacityError ? "capacity-error-after-retry" : "ok";
+      const second = prepare(target, opts.work, "b", !!opts.coverage);
+      const secondHash = treeHash(second);
+      if (ledger.tried.includes(inputHash(secondHash))) {
+        rep.verdict = "rea-failed";
+        rep.reason = `capacity error; cleaning changed nothing, so the same input is not retried${opts.coverage ? "" : ". Add --coverage to prune decoy suspects"}`;
       } else {
-        rep.verdict = "capacity-error-after-retry";
-        rep.reason = v.ok ? "time or token cap reached before the retry" : v.reason;
+        const v = mayRetry(ledger, secondHash);
+        if (v.ok && check(ledger).ok) {
+          admit(ledger, secondHash);
+          a = runRea(opts.rea, second, ledger);
+          rep.attempts.push(a);
+          rep.prepared = second;
+          rep.verdict = a.capacityError ? "capacity-error-after-retry" : "ok";
+        } else {
+          rep.verdict = "capacity-error-after-retry";
+          rep.reason = v.ok ? "time or token cap reached before the retry" : v.reason;
+        }
       }
     } else rep.verdict = a.exitCode === 0 ? "ok" : "rea-failed";
   }

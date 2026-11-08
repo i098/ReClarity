@@ -64,6 +64,24 @@ describe("fold-js keeps what it cannot prove dead", () => {
   });
 });
 
+describe("fold-js keeps behavior it cannot prove unchanged", () => {
+  const seed = "const _s = 4098631152 | (typeof _d === \"function\" && _d(0) === 1282826635 ? 1 : 0);\nfunction _d() { return 0; }\n";
+
+  test("a call that mutates its argument is kept", () => {
+    const code = `${seed}const registry = new Map();\nfunction register(m) { m.set("a", 1); }\nregister(registry);\nmodule.exports = { has: (k) => registry.has(k) };\n`;
+    expect(load(foldJs(code).code).has!("a")).toBe(true);
+    const code2 = `${seed}const cfg = {};\nfunction init(c) { c.ready = true; }\ninit(cfg);\nmodule.exports = { ready: () => cfg.ready };\n`;
+    expect(load(foldJs(code2).code).ready!()).toBe(true);
+  });
+
+  test("a classic script keeps its top-level declarations, which other scripts may call", () => {
+    const code = `${seed}function onSave() { return 1; }\nfunction helper() { return 2; }\n`;
+    const out = foldJs(code).code;
+    expect(out).toContain("function onSave");
+    expect(out).toContain("function helper");
+  });
+});
+
 test("foldPath writes a copy and leaves the original", () => {
   const src = join(tmp, "in.js");
   const original = readFixture("main.bla.js");

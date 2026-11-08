@@ -12,9 +12,9 @@ JS and Electron are built. Other formats are listed so the gap is visible.
 | String doubling | `primitive-bytes` (1 MiB) | `string_doubling` | `fold-js.ts` removes the unread doubling chain | built |
 | Getter rings | `getter-expansion` (512) | `getter_ring` | Removed when unreached | built |
 | Selector pyramid | `alias-selections` (512) | `selector_pyramid` | Removed when unreached | built |
-| Shadow logic, honeypots, evidence lures | Evidence contract | `bait_text`, `enclave_words` | `coverage.ts`: not run and unreferenced and trap words = decoy suspect, quarantined. Ran but carries trap words = `bait_ran`, listed, never an Observation | built |
+| Shadow logic, honeypots, evidence lures | Evidence contract | `bait_text`, `enclave_words` | Plain JS only (`coverage.ts` does not cover ASAR). `coverage.ts`: not run and unreferenced and trap words = decoy suspect, quarantined. Ran but carries trap words = `bait_ran`, listed, never an Observation | built |
 | Obligation flood | Reconstruction obligation ledger | none (it is in REA output) | `guard.ts` `fixtureTargets`: fixtures for `run` statements only, at most 200 | built |
-| Electron IPC decoys | IPC pairing | `decoy_ipc` | Kept by `coverage.ts` when the channel fires; suspect when not run and trap-worded | built |
+| Electron IPC decoys | IPC pairing | `decoy_ipc` | Plain JS only (`coverage.ts` does not cover ASAR). Kept by `coverage.ts` when the channel fires; suspect when not run and trap-worded | built |
 | ASAR header flood | `REA_ASAR_MAX_HEADER_BYTES` (16 MiB) | `asar_header_flood` | `sanitize.ts` drops flood entries (long path, tiny body); `reaEnv` names the limit that reads the original | built |
 | Fuse decoys | sentinel limit (32 per slice) | `fuse_decoy` | `sanitize.ts` zeroes decoy sentinels (wire byte `9`); real blocks stay | built |
 | BLA config files | none | `config_file` | `sanitize.ts` drops them from the copy | built |

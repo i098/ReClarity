@@ -136,7 +136,7 @@ function bodies(ast: AnyNode): AnyNode[][] {
 function sinkCall(st: AnyNode): string | undefined {
   if (st.type !== "ExpressionStatement" || st.expression.type !== "CallExpression") return undefined;
   const { callee, arguments: args } = st.expression;
-  return callee.type === "Identifier" && args.every((a) => a.type !== "SpreadElement" && pure(a)) ? callee.name : undefined;
+  return callee.type === "Identifier" && args.every((a) => a.type === "Literal") ? callee.name : undefined;
 }
 
 /**
@@ -188,7 +188,12 @@ function unreachedCuts(code: string, seedNames: string[]): [number, number][] {
   return decls.filter((d) => !live.has(d.name)).map((d) => [d.node.start, d.node.end]);
 }
 
+/** ESM, or CommonJS (uses require/module/exports). Top-level declarations of a classic script are globals other code may reach. */
+const isModule = (ast: Program): boolean =>
+  ast.body.some((st) => st.type.startsWith("Import") || st.type.startsWith("Export")) || uses(ast).some((u) => u === "require" || u === "module" || u === "exports");
+
 export function pruneJs(src: string, seeds: Seed[]): { code: string; stats: PruneStats } {
+  if (!isModule(parseJs(src))) return { code: src, stats: { declarationsRemoved: 0, sinkCallsRemoved: 0 } };
   const seedNames = seeds.map((s) => s.name);
   let cuts = unreachedCuts(src, seedNames);
   let code = applyCuts(src, cuts);

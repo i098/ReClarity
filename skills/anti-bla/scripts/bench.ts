@@ -10,7 +10,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TRAP } from "./coverage.ts";
-import { isCapacityError } from "./guard.ts";
+import { isReaCapacityError } from "./guard.ts";
 import { prepare } from "./run.ts";
 
 export interface Run {
@@ -53,7 +53,7 @@ function once(rea: string, path: string, facts: string[]): Run {
     ms,
     exitCode: r.exitCode ?? null,
     error,
-    capacityError: r.exitCode !== 0 && isCapacityError(r.stderr.toString()),
+    capacityError: isReaCapacityError(r.exitCode ?? null, text, r.stderr.toString()),
     outputBytes: text.length,
     recall: facts.length ? hit / facts.length : 0,
     trapHits: error ? 0 : (text.match(new RegExp(TRAP.source, "gi")) ?? []).length,

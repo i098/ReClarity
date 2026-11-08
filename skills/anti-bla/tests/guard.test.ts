@@ -73,7 +73,8 @@ describe("run wrapper", () => {
 
   test("a capacity error on an already clean copy is reported, not retried on the same bytes", () => {
     const r = run(target, { work: join(tmp, "w2"), rea: "echo Primitive candidate budget exceeded >&2; exit 1" });
-    expect(r.verdict).toBe("capacity-error-after-retry");
+    expect(r.verdict).toBe("rea-failed");
+    expect(r.reason).toContain("--coverage");
     expect(r.attempts).toHaveLength(1);
   });
 
@@ -81,8 +82,13 @@ describe("run wrapper", () => {
     const asar = join(tmp, "app.asar");
     writeFileSync(asar, floodAsar(150));
     const r = run(asar, { work: join(tmp, "w5"), rea: "echo budget exceeded >&2; exit 1" });
-    expect(r.verdict).toBe("capacity-error-after-retry");
+    expect(r.verdict).toBe("rea-failed");
     expect(r.attempts).toHaveLength(1);
+  });
+
+  test("a limit phrase in the JSON error on stdout, with a nonzero exit, is a capacity error", () => {
+    const r = run(target, { work: join(tmp, "w9"), rea: `echo '{"error":"x","message":"ASAR header/index admission is limited to 16 MiB"}'; exit 1` });
+    expect(r.attempts[0]!.capacityError).toBe(true);
   });
 
   test("limit words echoed from the target on stdout of a successful REA run are not a capacity error", () => {
@@ -96,6 +102,11 @@ describe("run wrapper", () => {
     const r = run(target, { work: join(tmp, "w7"), rea: "echo budget exceeded; exit 1" });
     expect(r.verdict).toBe("rea-failed");
     expect(r.attempts).toHaveLength(1);
+  });
+
+  test("limit words in other stdout text of a failing run are not a capacity error", () => {
+    const r = run(target, { work: join(tmp, "w10"), rea: `echo '{"normalized_result":{"note":"budget exceeded"}}'; exit 1` });
+    expect(r.attempts[0]!.capacityError).toBe(false);
   });
 
   test("a plain target goes to REA untouched", () => {

@@ -68,7 +68,7 @@ function mainOf(dir: string): string {
   return typeof main === "string" ? main : "index.js";
 }
 
-export function runCovered(target: string, opts: RunOptions = {}): RunResult {
+function runCovered(target: string, opts: RunOptions = {}): RunResult {
   if (!Bun.which("bwrap")) throw new Error("refusing to run target code: bwrap not found (sandbox required, this host only)");
   const abs = resolve(target);
   const isDir = statSync(abs).isDirectory();

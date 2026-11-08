@@ -109,7 +109,7 @@ function scanRuns(body: AnyNode[], acc: Acc, label: string): void {
   }
 }
 
-export function scanJs(src: string, label: string, acc: Acc): void {
+function scanJs(src: string, label: string, acc: Acc): void {
   acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
   acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
   acc.add("decoy_ipc", label, src.match(DECOY_IPC)?.length ?? 0);

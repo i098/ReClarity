@@ -2,7 +2,7 @@ import { closeSync, openSync, readSync } from "node:fs";
 // Electron fuse wire: SENTINEL, version byte, length byte, then one state byte per fuse.
 // Real states are '0' '1' 'r'. BLA 3.1.0 decoys carry '9' (0x39) in the wire.
 export const SENTINEL = Buffer.from("dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX", "ascii");
-export const DECOY_BYTE = 0x39;
+const DECOY_BYTE = 0x39;
 /** REA ElectronFuseReader gives up above this many sentinels per slice. */
 export const REA_MAX_SENTINELS = 32;
 

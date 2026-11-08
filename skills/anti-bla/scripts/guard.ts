@@ -8,8 +8,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { CoverageReport } from "./coverage.ts";
 
-export const DEFAULT_MAX_TOKENS = 300_000;
-export const DEFAULT_MAX_SECONDS = 30 * 60;
+const DEFAULT_MAX_TOKENS = 300_000;
+const DEFAULT_MAX_SECONDS = 30 * 60;
 export const MAX_FIXTURES = 200;
 
 /** REA limit messages (src/domain/javascript/javascriptSemanticResourceLimits.ts, asarHeaderAdmission) and BLA's own limit labels. */

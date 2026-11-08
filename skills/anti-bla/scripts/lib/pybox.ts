@@ -59,7 +59,7 @@ export function coverageVenv(): string {
   const host = Bun.which("python3");
   if (!host) throw new Error("coverage.py needs python3 on PATH to make its venv");
   mkdirSync(dirname(venv), { recursive: true });
-  const steps = [[host, "-m", "venv", "--clear", venv], [py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", `coverage==${COVERAGE_VERSION}`]];
+  const steps = [[host, "-m", "venv", venv], [py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", `coverage==${COVERAGE_VERSION}`]];
   for (const s of steps) {
     const r = Bun.spawnSync(s, { stdout: "ignore", stderr: "pipe", timeout: 180_000 });
     if (r.exitCode !== 0) throw new Error(`could not set up coverage.py in ${venv}: ${r.stderr.toString().trim().split("\n").at(-1) ?? ""}`);

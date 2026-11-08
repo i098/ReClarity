@@ -1,0 +1,11 @@
+flowchart TD
+  T[Target build] --> S[scan: score 0-100]
+  S -->|score 0| P[Plain REA]
+  S -->|score above 0| SAN[sanitize: ASAR flood, fuse decoys, config files]
+  SAN --> F[fold-js: opaque predicates, dead code]
+  F --> C[coverage: bwrap run, live set, decoy quarantine]
+  C --> R[REA on the clean copy]
+  R -->|capacity error| M{same bytes as before?}
+  M -->|no, first retry| SAN
+  M -->|yes, or second retry| X[Stop and report]
+  G[guard: token and time caps, ledger] -.-> R

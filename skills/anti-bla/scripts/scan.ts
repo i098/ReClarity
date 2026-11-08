@@ -240,7 +240,7 @@ function scanFile(path: string, size: number, acc: Acc): void {
   } else if (size >= 1 << 20 && isNativeExecutable(path)) {
     // shortcut: reads the whole binary into memory; stream it if a 1 GB target ever shows up
     const bin = readFileSync(path);
-    if (bin.subarray(-65536).includes(PYINSTALLER_COOKIE)) acc.notes.push(`${path}: PyInstaller archive; its .pyc files are not read or cleaned (see "Limits" in the skill). Clean the .py files before bundling, or extract it and run this on the .pyc files`);
+    if (bin.subarray(-65536).includes(PYINSTALLER_COOKIE)) acc.notes.push(`${path}: PyInstaller archive; its .pyc files are not read or cleaned. Clean the .py files before bundling, or extract it and run this on the .pyc files`);
     const s = findSentinels(bin);
     const decoys = s.filter((x) => x.decoy).length;
     if (decoys) acc.add("fuse_decoy", `${path}: ${decoys} decoys of ${s.length} sentinels (REA limit ${REA_MAX_SENTINELS})`, decoys);

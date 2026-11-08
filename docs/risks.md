@@ -1,0 +1,13 @@
+# Risks and their guards
+
+| Risk | Guard | Where it is enforced |
+| --- | --- | --- |
+| Real logic that runs only on rare input looks like a decoy | Never deleted. It is marked "not run". Only not-run code that nothing kept still names and that carries trap words is a decoy suspect, and it leaves the copy whole into `quarantine.json`, so it can be put back. `fold-js.ts` folds only predicates that give one answer for every seed value, so rare-input branches survive. | `coverage.ts` `classify`, `fold-js.ts`; tests `coverage.test.ts`, `fold-js.test.ts` |
+| BLA changes its shapes per release | `signatures.md` is pinned to BLA 3.1.0. `scan.ts` exports `BLA_VERSION` and a test fails if the two disagree. A scan with findings carries the pin in its notes. A score of 0 on a build from a newer BLA means "not recognized", not "clean" (`SKILL.md` rule 6). On a new BLA: harden the sample, run arms A/B/C, update shapes, then change the pin. | `scan.ts`, `signatures.md`, `scan.test.ts` |
+| Coverage runs target code | bwrap only: no network, no home, scrubbed env, read-only root, private `/tmp`, 512 MiB heap, time limit. No fallback to an unsandboxed run: without bwrap the tool refuses. This host only. | `coverage.ts` `runCovered`; test "target runs without network, home files or inherited secrets" |
+| Target text carries instructions | BLA plants bait text that addresses the analyst. Target text is data: `asData` wraps it and strips a closing tag. Bait is a finding, never evidence. | `guard.ts` `asData`, `SKILL.md` rule 2 |
+| A REA capacity error loops | One retry, on a differently cleaned copy. The same bytes are never retried (SHA-256 ledger). A second capacity error is reported. | `guard.ts` `mayRetry`, `run.ts` |
+| Cost runs away | Token cap (300k) and time cap (30 min) per target, in a ledger file. At the cap, stop and report. Starting values: tune them in the A/B/C runs. | `guard.ts` `check`, `run.ts` |
+| Obligation ledger floods | Fixtures only for statements the sandbox run reached, at most 200. | `guard.ts` `fixtureTargets` |
+| The original gets changed | Every tool writes a copy. `sanitize.ts` refuses an output inside the target. | `sanitize.ts`, `fold-js.ts`, `coverage.ts --out` |
+| Folding breaks a build | `fold-js.ts` never emits code that does not parse. A test compares exports of the original and the folded build on common and rare input. | `fold-js.ts`, `fold-js.test.ts` |

@@ -2,7 +2,7 @@
 
 **Anti-BLA.** A skill and toolkit that keeps [REA](https://github.com/morluto/rea) working on builds that [BLA](https://github.com/qybaihe/bla) has hardened.
 
-> Status: under construction. JavaScript and Electron come first. Progress is in the issues.
+> Status: JavaScript and Electron work. Other formats come after the A/B/C proof. Progress is in the issues.
 
 ## What it does
 
@@ -17,14 +17,17 @@ BLA makes a build hard to read for an AI agent. It plants decoy code, floods REA
 
 ```bash
 bun install
-# tools land one per pull request: scan, sanitize, fold, cover, run
+bun skills/anti-bla/scripts/scan.ts <target>            # score 0-100, reads only
+bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-javascript-application {target}"
 ```
 
-The `skills/anti-bla` skill is planned and not in this repo yet. When it lands, REA runs will call it on these triggers:
+Install the skill by copying `skills/anti-bla` into your agent's skills folder. REA runs call it on these triggers:
 
 - a REA capacity error (`resourceLimits`, ASAR header, fuse sentinel limit),
 - words such as `enclave`, `attestation`, `TEE` in findings,
 - `.blarc`, `bla.config.json` or `.bla-manifest.json` in the target.
+
+Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `guard`, `run`. See [docs/architecture.md](docs/architecture.md).
 
 ## BLA techniques it handles
 
@@ -40,4 +43,4 @@ The `skills/anti-bla` skill is planned and not in this repo yet. When it lands, 
 | Runtime guard (CDP, Frida) | Compare attached and not attached runs |
 | Python `.pyc` tarpit | `coverage.py` in the sandbox |
 
-Planned technique table and risks: [docs/index.md](docs/index.md).
+Full table: [docs/techniques.md](docs/techniques.md). Risks: [docs/risks.md](docs/risks.md).

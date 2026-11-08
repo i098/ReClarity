@@ -2,11 +2,11 @@
 // Wrapper for one target: scan first, clean a copy when BLA shapes show, run REA under the caps.
 // A REA capacity error gets ONE retry, and only on a differently cleaned copy. The original is never written.
 //   bun run.ts <target> --work <dir> [--rea "rea ... {target}"] [--coverage]
-import { lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { coverage, hasSandbox, quarantineCopy } from "./coverage.ts";
 import { foldPath } from "./fold-js.ts";
-import { admit, asData, check, inputHash, isReaCapacityError, loadLedger, mayRetry, saveLedger, type Ledger } from "./guard.ts";
+import { admit, asData, check, inputHash, isReaCapacityError, loadLedger, mayRetry, newLedger, saveLedger, type Ledger } from "./guard.ts";
 import { sanitize } from "./sanitize.ts";
 import { scan, type ScanReport } from "./scan.ts";
 
@@ -41,17 +41,19 @@ export const treeHash = (path: string): string => hashNode(realpathSync(path));
 
 /** Sanitize, then fold, into work/<tag>. Returns the cleaned path. */
 export function prepare(target: string, work: string, tag: string, withCoverage: boolean): string {
+  const src = realpathSync(target);
+  for (const d of [`${tag}-san`, `${tag}-clean`, `${tag}-quarantine`, `${tag}-quarantine.quarantine.json`]) rmSync(join(work, d), { recursive: true, force: true });
   const san = join(work, `${tag}-san`);
-  sanitize(target, san);
-  const isDir = statSync(target).isDirectory();
-  const sanitized = isDir ? san : join(san, basename(target));
-  const folded = join(work, `${tag}-clean`, isDir ? "" : basename(target));
+  sanitize(src, san);
+  const isDir = statSync(src).isDirectory();
+  const sanitized = isDir ? san : join(san, basename(src));
+  const folded = join(work, `${tag}-clean`, isDir ? "" : basename(src));
   mkdirSync(join(work, `${tag}-clean`), { recursive: true });
   foldPath(sanitized, folded);
   if (!withCoverage) return folded;
   const quarantined = join(work, `${tag}-quarantine`);
   quarantineCopy(folded, coverage(folded), quarantined);
-  return isDir ? quarantined : join(quarantined, basename(target));
+  return isDir ? quarantined : join(quarantined, basename(src));
 }
 
 function runRea(template: string, copy: string, ledger: Ledger): ReaAttempt {
@@ -65,7 +67,9 @@ function runRea(template: string, copy: string, ledger: Ledger): ReaAttempt {
 export function run(target: string, opts: { work: string; rea?: string; coverage?: boolean }): RunReport {
   mkdirSync(opts.work, { recursive: true });
   const ledgerPath = join(opts.work, "ledger.json");
-  const ledger = loadLedger(ledgerPath);
+  const real = realpathSync(target);
+  const saved = loadLedger(ledgerPath);
+  const ledger: Ledger = saved.target === real ? saved : { ...newLedger(), target: real };
   const s = scan(target);
   const cleaned = s.score > 0;
   const prepared = cleaned ? prepare(target, opts.work, "a", !!opts.coverage) : target;
@@ -77,11 +81,11 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
     let a = runRea(opts.rea, prepared, ledger);
     rep.attempts.push(a);
     if (a.capacityError) {
-      const second = prepare(target, opts.work, "b", hasSandbox() && !target.endsWith(".asar"));
+      const second = prepare(target, opts.work, "b", hasSandbox() && !realpathSync(target).endsWith(".asar"));
       const secondHash = treeHash(second);
       if (ledger.tried.includes(inputHash(secondHash))) {
         rep.verdict = "rea-failed";
-        rep.reason = "capacity error; the retry copy has the same bytes as the copy already tried, so it is not retried";
+        rep.reason = `capacity error; the retry copy has the same bytes as the copy already tried (${hasSandbox() ? "an ASAR is not covered, or the first copy was already covered" : "no bwrap sandbox, so no coverage"}), so it is not retried`;
       } else {
         const v = mayRetry(ledger, secondHash);
         if (v.ok && check(ledger).ok) {

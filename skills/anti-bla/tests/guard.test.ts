@@ -47,6 +47,7 @@ describe("retry once", () => {
 test("fixtures cover run code only and are capped", () => {
   const statements = Array.from({ length: MAX_FIXTURES + 50 }, (_, i) => ({ start: i, end: i + 1, kind: "run" as const, head: `f${i}` }));
   const report = {
+    exitCode: 0,
     files: [{ file: "a.js", statements: [{ start: 0, end: 1, kind: "not_run" as const, head: "rare" }, { start: 0, end: 1, kind: "decoy_suspect" as const, head: "decoy" }, ...statements] }],
   } as CoverageReport;
   const t = fixtureTargets(report);
@@ -117,6 +118,30 @@ describe("run wrapper", () => {
     expect(r.attempts).toHaveLength(1);
   });
 
+  test("a second run in the same work dir does not keep files of the first", () => {
+    const d = join(tmp, "stale-src");
+    mkdirSync(d);
+    writeFileSync(join(d, "main.bla.js"), readFileSync(target));
+    writeFileSync(join(d, "only-first.js"), "module.exports = 1;\n");
+    const work = join(tmp, "w20");
+    run(d, { work });
+    expect(existsSync(join(work, "a-clean", "only-first.js"))).toBe(true);
+    rmSync(join(d, "only-first.js"));
+    run(d, { work });
+    expect(existsSync(join(work, "a-clean", "only-first.js"))).toBe(false);
+    expect(existsSync(join(work, "a-san", "only-first.js"))).toBe(false);
+  });
+
+  test("a symlinked file target is cleaned under its real name", () => {
+    const real = join(tmp, "real-app-1.2.bla.js");
+    writeFileSync(real, readFileSync(target));
+    const link = join(tmp, "app.bla.js");
+    symlinkSync(real, link);
+    const r = run(link, { work: join(tmp, "w21") });
+    expect(r.verdict).toBe("cleaned");
+    expect(existsSync(r.prepared)).toBe(true);
+  });
+
   test("a limit phrase in the JSON error on stdout, with a nonzero exit, is a capacity error", () => {
     const r = run(target, { work: join(tmp, "w9"), rea: `echo '{"error":"x","message":"ASAR header/index admission is limited to 16 MiB"}'; exit 1` });
     expect(r.attempts[0]!.capacityError).toBe(true);
@@ -151,8 +176,35 @@ describe("run wrapper", () => {
   test("a spent time cap stops before REA runs", () => {
     const work = join(tmp, "w4");
     run(target, { work }); // creates the ledger
-    writeFileSync(join(work, "ledger.json"), JSON.stringify({ ...newLedger(), maxSeconds: 1, startedAt: 1 }));
+    const ledgerPath = join(work, "ledger.json");
+    writeFileSync(ledgerPath, JSON.stringify({ ...JSON.parse(readFileSync(ledgerPath, "utf8")), maxSeconds: 1, startedAt: 1 }));
     expect(run(target, { work, rea: "true" }).verdict).toBe("capped");
+  });
+
+  test("a second target in the same work dir gets its own budget and none of the first target's files", () => {
+    const work = join(tmp, "w30");
+    const first = join(tmp, "first-app.bla.js");
+    const second = join(tmp, "second-app.bla.js");
+    writeFileSync(first, readFileSync(target));
+    writeFileSync(second, readFileSync(target));
+    run(first, { work });
+    const ledgerPath = join(work, "ledger.json");
+    writeFileSync(ledgerPath, JSON.stringify({ ...JSON.parse(readFileSync(ledgerPath, "utf8")), maxSeconds: 1, startedAt: 1 }));
+    expect(run(first, { work, rea: "true" }).verdict).toBe("capped");
+    const r = run(second, { work, rea: "true" });
+    expect(r.verdict).toBe("ok");
+    expect(r.attempts).toHaveLength(1);
+    expect(existsSync(join(work, "a-clean", "first-app.bla.js"))).toBe(false);
+  });
+
+  test("a symlinked ASAR target is cleaned under its real name", () => {
+    const real = join(tmp, "real-1.2.asar");
+    writeFileSync(real, floodAsar(150));
+    const link = join(tmp, "link.asar");
+    symlinkSync(real, link);
+    const r = run(link, { work: join(tmp, "w31") });
+    expect(r.verdict).toBe("cleaned");
+    expect(existsSync(r.prepared)).toBe(true);
   });
 
   test("treeHash changes when a file changes", () => {

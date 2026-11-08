@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coverage, quarantineCopy } from "../scripts/coverage.ts";
+import { fixtureTargets } from "../scripts/guard.ts";
 
 const sandboxWorks = !!Bun.which("bwrap") && Bun.spawnSync(["bwrap", "--ro-bind", "/", "/", "true"]).exitCode === 0;
 const tmp = mkdtempSync(join(tmpdir(), "antibla-covtest-"));
@@ -83,6 +84,14 @@ module.exports = 1;
     const r = coverage(f);
     expect(r.files.map((x) => x.file)).toEqual(["main.js"]);
     expect(kinds(r).shadow).toBe("decoy_suspect");
+  });
+
+  test("a target that crashes at its first require gives no fixtures and a note", () => {
+    const f = app("crash", "const { app } = require('electron');\napp.on('ready', () => { verifyAttestation(); });\nfunction verifyAttestation() {}\nmodule.exports = 1;\n");
+    const r = coverage(f);
+    expect(r.exitCode).not.toBe(0);
+    expect(fixtureTargets(r)).toEqual([]);
+    expect(r.notes.join(" ")).toContain("coverage labels unreliable, no fixtures built");
   });
 
   test("a target that never ends is killed at the time limit", () => {

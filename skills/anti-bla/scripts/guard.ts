@@ -36,6 +36,8 @@ export interface Ledger {
   /** sha256 of each input already given to REA */
   tried: string[];
   retried: boolean;
+  /** real path of the target this budget belongs to */
+  target?: string;
 }
 export type Verdict = { ok: true } | { ok: false; reason: string };
 
@@ -81,8 +83,9 @@ export function mayRetry(l: Ledger, cleaned: string | Buffer): Verdict {
   return { ok: true };
 }
 
-/** Obligation fixtures: only statements the sandbox run reached, capped. */
+/** Obligation fixtures: only statements the sandbox run reached, capped. A run that crashed or was killed gives none: its labels are unreliable. */
 export function fixtureTargets(report: CoverageReport): { file: string; head: string }[] {
+  if (report.exitCode !== 0) return [];
   return report.files.flatMap((f) => f.statements.filter((s) => s.kind === "run").map((s) => ({ file: f.file, head: s.head }))).slice(0, MAX_FIXTURES);
 }
 

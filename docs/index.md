@@ -6,6 +6,7 @@ ReClarity is anti-BLA for REA runs. This page is the entry point.
 
 - [Technique table](techniques.md): each BLA trap, how ReClarity sees it, how it cleans it, and the REA step it protects.
 - [Risks and their guards](risks.md).
+- [Install and use](usage.md): requirements, commands, REA triggers.
 - [Architecture](architecture.md): the flow and the tools.
 - [Proof](proof.md): A/B/C runs on a BLA-hardened sample app.
 

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foldJs, foldPath } from "../scripts/fold-js.ts";
@@ -113,4 +113,43 @@ test("an unparseable .js in a directory is kept and noted, not fatal", () => {
   expect(readFileSync(join(tmp, "bad-dir-out", "bad.js"), "utf8")).toBe("this is { not js");
   expect(rep.notes.join("\n")).toContain("bad.js");
   expect(rep.files.map((f) => f.path)).toEqual([join(d, "main.js")]);
+});
+
+describe("a file with only prunable code is cleaned the same in a directory and in an ASAR", () => {
+  const seed = "const _s = 4098631152 | (typeof _d === \"function\" && _d(0) === 1282826635 ? 1 : 0);\n";
+  const code = `${seed}function _d() { return 0; }\nfunction unused() { return 1; }\nconst arr = [unused];\nvoid [arr];\nmodule.exports = { f: () => 1 };\n`;
+
+  test("directory", () => {
+    const d = join(tmp, "prune-dir");
+    mkdirSync(d);
+    writeFileSync(join(d, "m.js"), code);
+    const rep = foldPath(d, join(tmp, "prune-dir-out"));
+    expect(readFileSync(join(tmp, "prune-dir-out", "m.js"), "utf8")).not.toContain("unused");
+    expect(rep.files).toHaveLength(1);
+  });
+
+  test("ASAR", () => {
+    const src = join(tmp, "prune.asar");
+    writeFileSync(src, buildAsar([{ path: "m.js", node: {}, data: Buffer.from(code) }]));
+    const rep = foldPath(src, join(tmp, "prune-out.asar"));
+    const out = openAsar(join(tmp, "prune-out.asar"));
+    expect(out.read(out.files[0]!).toString()).not.toContain("unused");
+    out.close();
+    expect(rep.files).toHaveLength(1);
+  });
+});
+
+test("foldPath never follows or copies a symlink", () => {
+  const outside = join(tmp, "outside-secret.js");
+  writeFileSync(outside, "module.exports = 'secret';\n");
+  const d = join(tmp, "link-dir");
+  mkdirSync(d);
+  writeFileSync(join(d, "main.js"), "module.exports = 1;\n");
+  symlinkSync(outside, join(d, "leak.js"));
+  symlinkSync(d, join(d, "loop"));
+  const rep = foldPath(d, join(tmp, "link-dir-out"));
+  expect(existsSync(join(tmp, "link-dir-out", "leak.js"))).toBe(false);
+  expect(existsSync(join(tmp, "link-dir-out", "loop"))).toBe(false);
+  expect(readFileSync(join(tmp, "link-dir-out", "main.js"), "utf8")).toBe("module.exports = 1;\n");
+  expect(rep.notes.filter((n) => n.includes("symlink skipped"))).toHaveLength(2);
 });

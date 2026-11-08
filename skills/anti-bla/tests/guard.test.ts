@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CoverageReport } from "../scripts/coverage.ts";
@@ -85,6 +85,19 @@ describe("run wrapper", () => {
     expect(r.attempts).toHaveLength(1);
   });
 
+  test("limit words echoed from the target on stdout of a successful REA run are not a capacity error", () => {
+    const r = run(target, { work: join(tmp, "w6"), rea: "echo capacity budget exceeded" });
+    expect(r.verdict).toBe("ok");
+    expect(r.attempts).toHaveLength(1);
+    expect(r.attempts[0]!.capacityError).toBe(false);
+  });
+
+  test("a failing REA run that only mentions limit words on stdout is a plain failure, not retried", () => {
+    const r = run(target, { work: join(tmp, "w7"), rea: "echo budget exceeded; exit 1" });
+    expect(r.verdict).toBe("rea-failed");
+    expect(r.attempts).toHaveLength(1);
+  });
+
   test("a plain target goes to REA untouched", () => {
     const plain = join(tmp, "plain.js");
     writeFileSync(plain, "module.exports = 1;\n");
@@ -106,5 +119,28 @@ describe("run wrapper", () => {
     const before = treeHash(join(d, "a-clean"));
     writeFileSync(join(d, "a-clean", "main.bla.js"), "x");
     expect(treeHash(join(d, "a-clean"))).not.toBe(before);
+  });
+
+  test("treeHash does not follow a symlink loop", () => {
+    const d = join(tmp, "hl");
+    mkdirSync(d);
+    writeFileSync(join(d, "a.js"), "1");
+    symlinkSync(d, join(d, "self"));
+    expect(treeHash(d)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test("a hardened directory with symlinks runs: links are not followed and not in the clean copy", () => {
+    const d = join(tmp, "linked");
+    mkdirSync(d);
+    writeFileSync(join(d, "main.bla.js"), readFileSync(target));
+    const outside = join(tmp, "outside-host.txt");
+    writeFileSync(outside, "host secret");
+    symlinkSync(outside, join(d, "x.js"));
+    symlinkSync(d, join(d, "loop"));
+    const r = run(d, { work: join(tmp, "w8") });
+    expect(r.verdict).toBe("cleaned");
+    expect(existsSync(join(r.prepared, "x.js"))).toBe(false);
+    expect(existsSync(join(r.prepared, "loop"))).toBe(false);
+    expect(r.scan.notes.filter((n) => n.includes("symlink skipped"))).toHaveLength(2);
   });
 });

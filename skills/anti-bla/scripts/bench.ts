@@ -53,7 +53,7 @@ function once(rea: string, path: string, facts: string[]): Run {
     ms,
     exitCode: r.exitCode ?? null,
     error,
-    capacityError: error ? isCapacityError(error) || isCapacityError(text) : false,
+    capacityError: r.exitCode !== 0 && isCapacityError(r.stderr.toString()),
     outputBytes: text.length,
     recall: facts.length ? hit / facts.length : 0,
     trapHits: error ? 0 : (text.match(new RegExp(TRAP.source, "gi")) ?? []).length,

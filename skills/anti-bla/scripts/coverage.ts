@@ -7,7 +7,7 @@
 //   bait that ran carries trap words but executed: listed, never an Observation, kept.
 // Target code is untrusted: it runs only inside bwrap on this host (no network, no home,
 // no secrets in env, read-only root, time limit). Without bwrap the tool refuses.
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseJs, type AnyNode } from "./lib/js.ts";
@@ -122,7 +122,7 @@ function loadCounts(covDir: string, size: Map<string, number>): Map<string, Uint
 
 const jsFiles = (root: string, rel = ""): string[] =>
   readdirSync(join(root, rel), { withFileTypes: true }).flatMap((e) =>
-    e.name === "node_modules" ? [] : e.isDirectory() ? jsFiles(root, join(rel, e.name)) : /\.(c|m)?js$/.test(e.name) ? [join(rel, e.name)] : [],
+    e.name === "node_modules" ? [] : e.isDirectory() ? jsFiles(root, join(rel, e.name)) : e.isFile() && /\.(c|m)?js$/.test(e.name) ? [join(rel, e.name)] : [],
   );
 
 const declName = (st: AnyNode): string => (st.type === "FunctionDeclaration" || st.type === "ClassDeclaration" ? st.id?.name : st.type === "VariableDeclaration" && st.declarations.length === 1 && st.declarations[0]!.id.type === "Identifier" ? st.declarations[0]!.id.name : undefined) ?? "";
@@ -184,7 +184,7 @@ export function quarantineCopy(target: string, report: CoverageReport, out: stri
   const root = isDir ? abs : dirname(abs);
   const quarantine: { file: string; start: number; text: string }[] = [];
   mkdirSync(out, { recursive: true });
-  cpSync(abs, isDir ? out : join(out, basename(abs)), { recursive: true }); // files without coverage ride along; covered JS is rewritten below
+  cpSync(abs, isDir ? out : join(out, basename(abs)), { recursive: true, filter: (s) => s === abs || !lstatSync(s).isSymbolicLink() }); // files without coverage ride along; covered JS is rewritten below
   for (const f of report.files) {
     let src = readFileSync(join(root, f.file), "utf8");
     for (const s of f.statements.filter((x) => x.kind === "decoy_suspect").sort((a, b) => b.start - a.start)) {

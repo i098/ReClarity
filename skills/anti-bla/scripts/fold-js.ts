@@ -3,7 +3,7 @@
 // Pass 1 folds `if`/`?:`/expressions that give one answer for every seed value.
 // Pass 2 removes top-level declarations no live code reaches (decoy clusters, keep-alive arrays).
 // It never decides from names or text: only from folded predicates and reachability.
-import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
 import { findSeeds, kids, opaqueValue, parseJs, type AnyNode, type Seed, type SeedFlag } from "./lib/js.ts";
@@ -77,6 +77,7 @@ export function foldJs(src: string, seedFlag: SeedFlag = 1): FoldResult {
 }
 
 const isJs = (p: string) => [".js", ".cjs", ".mjs"].includes(extname(p));
+const changed = (s: FoldStats): boolean => s.predicatesFolded + s.branchesDropped + s.declarationsRemoved + s.sinkCallsRemoved > 0 || s.sourceMapStripped;
 
 export interface FoldReport {
   tool: "anti-bla/fold-js";
@@ -98,8 +99,18 @@ function foldTree(src: string, dst: string, flag: SeedFlag, rep: FoldReport): vo
   if (statSync(src).isDirectory()) {
     mkdirSync(dst, { recursive: true });
     for (const e of readdirSync(src)) {
-      if (e === "node_modules") cpSync(join(src, e), join(dst, e), { recursive: true });
-      else foldTree(join(src, e), join(dst, e), flag, rep);
+      const p = join(src, e);
+      if (e === "node_modules") {
+        cpSync(p, join(dst, e), {
+          recursive: true,
+          filter: (s) => {
+            const link = lstatSync(s).isSymbolicLink();
+            if (link) rep.notes.push(`${s}: symlink skipped`);
+            return !link;
+          },
+        });
+      } else if (lstatSync(p).isSymbolicLink()) rep.notes.push(`${p}: symlink skipped`);
+      else foldTree(p, join(dst, e), flag, rep);
     }
     return;
   }
@@ -113,7 +124,7 @@ function foldTree(src: string, dst: string, flag: SeedFlag, rep: FoldReport): vo
         const data = f.node.unpacked || f.node.link !== undefined ? undefined : asar!.read(f);
         if (!data || !isJs(f.path) || f.path.includes("node_modules/")) return { path: f.path, node: f.node, data };
         const r = tryFold(`${src}!${f.path}`, data.toString("utf8"), flag, rep);
-        if (!r || (!r.stats.predicatesFolded && !r.stats.branchesDropped)) return { path: f.path, node: f.node, data };
+        if (!r || !changed(r.stats)) return { path: f.path, node: f.node, data };
         folded.push({ path: `${src}!${f.path}`, stats: r.stats });
         const { integrity: _stale, ...node } = f.node as typeof f.node & { integrity?: unknown };
         return { path: f.path, node, data: Buffer.from(r.code) };
@@ -130,7 +141,7 @@ function foldTree(src: string, dst: string, flag: SeedFlag, rep: FoldReport): vo
     const text = readFileSync(src, "utf8");
     const r = tryFold(src, text, flag, rep);
     writeFileSync(dst, r?.code ?? text);
-    if (r) rep.files.push({ path: src, stats: r.stats });
+    if (r && changed(r.stats)) rep.files.push({ path: src, stats: r.stats });
   } else copyFileSync(src, dst);
 }
 

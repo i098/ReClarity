@@ -2,7 +2,7 @@
 // Wrapper for one target: scan first, clean a copy when BLA shapes show, run REA under the caps.
 // A REA capacity error gets ONE retry, and only on a differently cleaned copy. The original is never written.
 //   bun run.ts <target> --work <dir> [--rea "rea ... {target}"] [--coverage]
-import { mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { coverage, hasSandbox, quarantineCopy } from "./coverage.ts";
 import { foldPath } from "./fold-js.ts";
@@ -28,12 +28,16 @@ export interface RunReport {
   reason?: string;
 }
 
-/** Hash of a file, or of a directory's names and contents. */
-export function treeHash(path: string): string {
-  if (!statSync(path).isDirectory()) return inputHash(readFileSync(path));
-  const rows = readdirSync(path).sort().map((e) => `${e}:${treeHash(join(path, e))}`);
+function hashNode(path: string): string {
+  const st = lstatSync(path);
+  if (st.isSymbolicLink()) return inputHash(`link:${readlinkSync(path)}`);
+  if (!st.isDirectory()) return inputHash(readFileSync(path));
+  const rows = readdirSync(path).sort().map((e) => `${e}:${hashNode(join(path, e))}`);
   return inputHash(rows.join("\n"));
 }
+
+/** Hash of a file, or of a directory's names and contents. The named path is resolved; links below it hash their link text and are never followed. */
+export const treeHash = (path: string): string => hashNode(realpathSync(path));
 
 /** Sanitize, then fold, into work/<tag>. Returns the cleaned path. */
 export function prepare(target: string, work: string, tag: string, withCoverage: boolean): string {
@@ -55,7 +59,7 @@ function runRea(template: string, copy: string, ledger: Ledger): ReaAttempt {
   const cmd = template.replaceAll("{target}", `'${copy.replaceAll("'", "'\\''")}'`);
   const r = Bun.spawnSync(["sh", "-c", cmd], { timeout: left * 1000, killSignal: "SIGKILL", stdout: "pipe", stderr: "pipe" });
   const text = `${r.stdout.toString()}\n${r.stderr.toString()}`;
-  return { copy, exitCode: r.exitCode ?? null, capacityError: isCapacityError(text), output: asData(text.slice(-4000), "rea-output") };
+  return { copy, exitCode: r.exitCode ?? null, capacityError: r.exitCode !== 0 && isCapacityError(r.stderr.toString()), output: asData(text.slice(-4000), "rea-output") };
 }
 
 export function run(target: string, opts: { work: string; rea?: string; coverage?: boolean }): RunReport {

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scan, type ScanReport } from "../scripts/scan.ts";
@@ -65,6 +65,16 @@ describe("scan", () => {
     mkdirSync(d);
     writeFileSync(join(d, ".blarc"), "{}");
     expect(ids(scan(d))).toContain("config_file");
+  });
+
+  test("a symlink loop is skipped and noted, not followed", () => {
+    const d = join(tmp, "loop");
+    mkdirSync(d);
+    writeFileSync(join(d, "a.js"), "module.exports = 1;\n");
+    symlinkSync(d, join(d, "self"));
+    const r = scan(d);
+    expect(r.score).toBe(0);
+    expect(r.notes).toEqual([`${join(d, "self")}: symlink skipped`]);
   });
 
   test("a truncated ASAR is a note, not a crash", () => {

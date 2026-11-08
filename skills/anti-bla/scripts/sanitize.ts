@@ -2,14 +2,14 @@
 // Write a clean COPY of a build for REA: drop ASAR header flood, neutralize decoy fuse
 // sentinels, drop BLA config files. The original is never written. Code is never deleted
 // here: logic that only looks like a decoy is handled by coverage.ts ("not run").
-import { copyFileSync, closeSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { copyFileSync, closeSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
 import { SENTINEL, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
 import { CONFIG_NAMES, FLOOD_MIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
 
 export interface Action {
-  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "copied";
+  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "copied" | "skipped-symlink";
   path: string;
   detail?: string;
 }
@@ -75,7 +75,11 @@ function copyTree(src: string, dst: string, r: SanitizeReport): void {
   const st = statSync(src);
   if (st.isDirectory()) {
     mkdirSync(dst, { recursive: true });
-    for (const e of readdirSync(src)) copyTree(join(src, e), join(dst, e), r);
+    for (const e of readdirSync(src)) {
+      const p = join(src, e);
+      if (lstatSync(p).isSymbolicLink()) r.actions.push({ kind: "skipped-symlink", path: p });
+      else copyTree(p, join(dst, e), r);
+    }
     return;
   }
   mkdirSync(dirname(dst), { recursive: true });

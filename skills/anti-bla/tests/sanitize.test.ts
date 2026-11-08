@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildAsar, openAsar } from "../scripts/lib/asar.ts";
@@ -28,13 +28,17 @@ describe("sanitize", () => {
     expect(scan(join(tmp, "out1", "app.asar")).score).toBe(0);
   });
 
-  test("ASAR: names that only look like decoys are kept and reported as suspects", () => {
-    const src = join(tmp, "legit.asar");
-    writeFileSync(src, floodAsar(150));
+  test("ASAR: a kept entry with an enclave-like name is reported as a suspect and stays in the archive", () => {
+    const pad = "a".repeat(256);
+    const shards = Array.from({ length: 120 }, (_, i) => ({ path: `enclave/shards/ring0-${pad}_${i}.json`, node: {}, data: Buffer.from("{}") }));
+    const src = join(tmp, "suspect.asar");
+    writeFileSync(src, buildAsar([{ path: "main.js", node: {}, data: Buffer.from("1") }, { path: "enclave/keys.json", node: {}, data: Buffer.from('{"k":1}') }, ...shards]));
     const r = sanitize(src, join(tmp, "out2"));
-    expect(r.suspects).toEqual([]); // the flood entries are gone
-    const only = floodAsar(0);
-    writeFileSync(join(tmp, "plain.asar"), only);
+    expect(r.suspects).toEqual(["enclave/keys.json"]);
+    const out = openAsar(join(tmp, "out2", "suspect.asar"));
+    expect(out.files.map((f) => f.path).sort()).toEqual(["enclave/keys.json", "main.js"]);
+    out.close();
+    writeFileSync(join(tmp, "plain.asar"), floodAsar(0));
     expect(sanitize(join(tmp, "plain.asar"), join(tmp, "out3")).actions[0]!.kind).toBe("copied-asar-unchanged");
   });
 
@@ -64,6 +68,20 @@ describe("sanitize", () => {
     const d = join(tmp, "proj");
     expect(() => sanitize(d, join(d, "inner"))).toThrow(/refusing/);
     expect(() => sanitize(d, d)).toThrow(/refusing/);
+  });
+
+  test("symlinks in the target are skipped and listed, never copied", () => {
+    const outside = join(tmp, "outside.txt");
+    writeFileSync(outside, "host secret");
+    const d = join(tmp, "links");
+    mkdirSync(d);
+    writeFileSync(join(d, "main.js"), "1");
+    symlinkSync(outside, join(d, "leak.txt"));
+    symlinkSync(d, join(d, "loop"));
+    const r = sanitize(d, join(tmp, "out7"));
+    expect(existsSync(join(tmp, "out7", "leak.txt"))).toBe(false);
+    expect(existsSync(join(tmp, "out7", "loop"))).toBe(false);
+    expect(r.actions.filter((a) => a.kind === "skipped-symlink").map((a) => a.path).sort()).toEqual([join(d, "leak.txt"), join(d, "loop")]);
   });
 
   test("an unreadable ASAR is copied unchanged, not a crash", () => {

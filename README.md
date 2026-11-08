@@ -16,12 +16,13 @@ BLA makes a build hard to read for an AI agent. It plants decoy code, floods REA
 ## Quick start
 
 ```bash
-bun install
+bun install                                              # at the repo root, for the tests
+bun install --cwd skills/anti-bla                       # pins acorn for the skill
 bun skills/anti-bla/scripts/scan.ts <target>            # score 0-100, reads only
 bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-javascript-application {target}"
 ```
 
-Install the skill by copying `skills/anti-bla` into your agent's skills folder. REA runs call it on these triggers:
+Install the skill by copying `skills/anti-bla` into your agent's skills folder, then run `bun install` inside it. REA runs call it on these triggers:
 
 - a REA capacity error (`resourceLimits`, ASAR header, fuse sentinel limit),
 - words such as `enclave`, `attestation`, `TEE` in findings,
@@ -34,13 +35,13 @@ Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `guard`, `run`. See [docs/arch
 | BLA technique | ReClarity answer |
 | --- | --- |
 | JS budget traps (opaque predicates, getter rings) | Fold in a copy, drop unrun branches |
-| Shadow logic, honeypots, evidence lures | An observation needs a run hit |
-| Obligation flood | Fixtures for covered code only |
+| Shadow logic, honeypots, evidence lures | Plain JS only: an observation needs a run hit (`coverage`, not for ASAR) |
+| Obligation flood | Fixtures for covered code only (plain JS) |
 | Call-graph maze, crash lures | Cut clusters that no entry reaches |
-| Electron IPC decoys | Keep channels that fire |
+| Electron IPC decoys | Plain JS only: keep channels that fire (`coverage`, not for ASAR) |
 | ASAR header and fuse flood | Raise `REA_ASAR_MAX_HEADER_BYTES`, strip decoy entries and sentinels |
-| WASM, SQLite, model, Go, Rust, BEAM caps | Clean copy per format (after JS and Electron) |
-| Runtime guard (CDP, Frida) | Compare attached and not attached runs |
-| Python `.pyc` tarpit | `coverage.py` in the sandbox |
+| WASM, SQLite, model, Go, Rust, BEAM caps | Planned: clean copy per format (after JS and Electron) |
+| Runtime guard (CDP, Frida) | Planned: compare attached and not attached runs |
+| Python `.pyc` tarpit | Planned: `coverage.py` in the sandbox |
 
 Full table: [docs/techniques.md](docs/techniques.md). Risks: [docs/risks.md](docs/risks.md).

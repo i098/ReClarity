@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Score a build 0-100 for BLA trap shapes before the first REA call. Score 0 = plain REA.
 // Shapes are pinned to BLA 3.1.0 (references/signatures.md). Reads only; never runs target code.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { openAsar } from "./lib/asar.ts";
 import { REA_MAX_SENTINELS, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
@@ -225,7 +225,12 @@ export function scan(target: string): ScanReport {
     if (seen >= MAX_FILES) return;
     const st = statSync(p);
     if (st.isDirectory()) {
-      for (const e of readdirSync(p)) if (!SKIP_DIRS.includes(e)) visit(join(p, e));
+      for (const e of readdirSync(p)) {
+        if (SKIP_DIRS.includes(e)) continue;
+        const child = join(p, e);
+        if (lstatSync(child).isSymbolicLink()) acc.notes.push(`${child}: symlink skipped`);
+        else visit(child);
+      }
     } else if (st.isFile()) {
       seen++;
       scanFile(p, st.size, acc);

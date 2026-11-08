@@ -144,8 +144,24 @@ Same command for every row: `rea inspect-python-pyc <file> --format json` (`--to
 
 The honey trailer alone stops REA. With the trailer cut by hand and the 27 decoys left in (3.12), REA runs but reports 6750 tokens against 2285 for the plain file, and its evidence lists 27 decoy code objects as functions. The cleaned copy has the same token count as the plain file and runs the same on its own interpreter (the test compares the output of `python -I` on the plain, hardened and cleaned files). The 3.14 `.pyc` was cleaned and run, but REA 6.8.0 decodes only CPython 3.7-3.13, so there is no REA number for it.
 
+### PyInstaller bundle
+
+Run on 2026-11-08 on this host. PyInstaller 6.22.3, CPython 3.12, pyinstxtractor-ng 2026.7.3, REA 6.8.0, same BLA fixture as above.
+
+**Fixture is a real PyInstaller build.** `tests/fixtures/ledger.py312.bla.pyinstaller` is the onedir executable (1.3 MB) that `pyinstaller` built from `ledger.py312.bla.pyc` (real BLA output, used as a sourceless module) and a 3-line entry script. The bundle runs and prints the same 3 lines as `ledger.py`. A onefile build of the same program (12 MB, not committed) unpacks to the same `.pyc` files and gave the same ReClarity result.
+
+| Step | Result |
+| --- | --- |
+| `scan.ts` on the bundle | score 40, `pyc_decoy_code` 28 names in `PYZ.pyz_extracted/ledger.pyc`; 110 `.pyc` files read. A plain build of `ledger.py` scores 0 |
+| `sanitize.ts` | 27 decoy code objects dropped. The cleaned `ledger.pyc` has the same bytecode and constants as `ledger.py` compiled by CPython 3.12 (`python.test.ts`). The raw `PYZ.pyz` is left out. Output is a folder, not a rebuilt bundle |
+| REA `inspect-artifact` on the bundle | ok, 56493 tokens, format `pyinstaller`; it lists the archive entries and does not open the PYZ, so no decoy name shows |
+| REA `inspect-python-pyc` on the extracted `ledger.pyc`, hardened | ok, 6883 tokens, 28 distinct decoy-shaped names |
+| REA `inspect-python-pyc` on the cleaned `ledger.pyc` | ok, 2429 tokens, 1 such name (the real helper `hydrate_session_cache_1234`); the plain `ledger.py312.pyc` gives 2432 |
+
+REA did not fail on the hardened member: PyInstaller stores only the code object, so the honey trailer that stops REA on a lone `.pyc` is already gone. The gain here is noise (6883 tokens to 2429), not a fix of an error. Not run: `rea` on the whole cleaned folder (`inspect-artifact` takes one artifact and exited 1 on the folder), a bundle built on Windows or macOS, an encrypted bundle (`--key`), PyInstaller before 6.
+
 ### Not covered
 
-- A `.pyc` compiled from already hardened source keeps the tarpit as ordinary functions (they are referenced by bytecode). Only the source route removes them. A PyInstaller bundle holds such files, so it is a limit: clean the `.py` files before bundling. `scan.ts` prints a note when it sees a PyInstaller archive.
+- A `.pyc` compiled from already hardened source keeps the tarpit as ordinary functions (they are referenced by bytecode). Only the source route removes them. A PyInstaller bundle built from such source has the same limit: clean the `.py` files before bundling.
 - One fixture, one seed, one BLA version. Python 3.7 and 3.8 `.pyc` layouts (BLA `py37`, `py38`) were not built here.
 - Coverage covers one run of the entry. A branch the run did not take is "not run", and stays unless it matches the tarpit shape.

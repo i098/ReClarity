@@ -4,8 +4,8 @@
 // files, and clean the data formats (SQLite, models, PCAP, EVM, Dart pools). The original is never written.
 // Code is never deleted here: logic that only looks like a decoy is handled by coverage.ts ("not run").
 // The one exception is a .pyc: BLA's woven decoy code objects are provably unused there (nothing points at them), so they go.
-import { copyFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, truncateSync, writeFileSync, writeSync } from "node:fs";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { copyFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, truncateSync, writeFileSync, writeSync } from "node:fs";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
 import { cleanApk, findDartDecoys, zeroDecoys } from "./lib/dart.ts";
 import { cleanEvm, cleanEvmHex } from "./lib/evm.ts";
@@ -13,7 +13,7 @@ import { MAX_APK_FILE, MAX_EVM_FILE, MAX_PCAP_FILE, dataKind } from "./lib/forma
 import { SENTINEL, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
 import { cleanModel } from "./lib/model.ts";
 import { cleanPcap } from "./lib/pcap.ts";
-import { cleanPyc } from "./lib/pybox.ts";
+import { cleanPyc, extractBundle, isPyInstaller } from "./lib/pybox.ts";
 import { pycDecoyNames } from "./lib/pytarpit.ts";
 import { dropHoney, isSqlite } from "./lib/sqlite.ts";
 import { BAIT, CONFIG_NAMES, FLOOD_MIN, MAX_BIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
@@ -22,7 +22,7 @@ import { REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart
 import { cleanWasm } from "./lib/wasm.ts";
 
 export interface Action {
-  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "pyc-decoys-dropped" | "pyc-kept-unchanged" | "copied" | "skipped-symlink" | "wasm-decoys-dropped" | "beam-decoys-dropped" | "native-trailer-cut" | "go-buildinfo-plant-zeroed" | "rustc-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed";
+  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "pyc-decoys-dropped" | "pyc-kept-unchanged" | "pyinstaller-extracted" | "pyinstaller-kept-unchanged" | "copied" | "skipped-symlink" | "wasm-decoys-dropped" | "beam-decoys-dropped" | "native-trailer-cut" | "go-buildinfo-plant-zeroed" | "rustc-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed";
   path: string;
   detail?: string;
 }
@@ -136,6 +136,26 @@ function sanitizePyc(src: string, dst: string, r: SanitizeReport): void {
   r.actions.push({ kind: "pyc-kept-unchanged", path: src, detail: out.why });
 }
 
+/** A PyInstaller bundle becomes a folder of its unpacked files with every .pyc cleaned as above. It is a tree, not a rebuilt bundle, so only REA reads it; it does not run. */
+function sanitizeBundle(src: string, dst: string, r: SanitizeReport, isNamedByGlue: (name: string) => boolean): void {
+  const x = extractBundle(src);
+  if (x.kind === "kept") {
+    copyFileSync(src, dst);
+    r.actions.push({ kind: "pyinstaller-kept-unchanged", path: src, detail: x.why });
+    return;
+  }
+  try {
+    const from = r.actions.length;
+    copyTree(x.dir, dst, r, isNamedByGlue);
+    for (const a of r.actions.slice(from)) a.path = `${src}!${relative(x.dir, a.path)}`;
+    rmSync(join(dst, "PYZ.pyz"), { force: true }); // the PYZ still holds every decoy; its members are in PYZ.pyz_extracted
+    const pyc = readdirSync(dst, { recursive: true }).filter((f) => String(f).endsWith(".pyc")).length;
+    r.actions.push({ kind: "pyinstaller-extracted", path: src, detail: `${pyc} .pyc files written to a folder (not a rebuilt bundle); raw PYZ.pyz left out` });
+  } finally {
+    x.cleanup();
+  }
+}
+
 /** Clean one data format file from src into dst. A file that is not BLA-shaped is copied byte for byte. */
 function sanitizeData(kind: NonNullable<ReturnType<typeof dataKind>>, src: string, dst: string, r: SanitizeReport): void {
   const plain = (detail?: string): void => {
@@ -205,6 +225,7 @@ function copyTree(src: string, dst: string, r: SanitizeReport, isNamedByGlue: (n
   const ext = extname(src);
   if (CONFIG_NAMES.includes(basename(src))) r.actions.push({ kind: "dropped-config", path: src });
   else if (ext === ".asar") sanitizeAsar(src, dst, r);
+  else if (st.size <= MAX_BIN && isNativeExecutable(src) && isPyInstaller(src)) sanitizeBundle(src, dst, r, isNamedByGlue);
   else if (ext === ".pyc" && st.size <= MAX_PYC) sanitizePyc(src, dst, r);
   else if (ext === ".wasm") sanitizeWasm(src, dst, r, isNamedByGlue);
   else if (ext === ".beam") sanitizeBeam(src, dst, r);

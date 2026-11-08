@@ -1,7 +1,7 @@
 // Fixtures: tests/fixtures/ledger.bla.py and ledger.py<ver>.bla.pyc are real `bla protect --intensity bankrupt
 // --seed fixture-1 --weave-decoys` output (BLA 3.1.0) for ledger.py. The plain .pyc files are ledger.py compiled.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coverage, quarantineCopy } from "../scripts/coverage.ts";
@@ -47,12 +47,6 @@ describe("scan: Python shapes", () => {
       expect(hard.findings.map((f) => f.id)).toEqual(expect.arrayContaining(["pyc_decoy_code", "bait_text"]));
       expect(scan(join(FIXTURES, `ledger.py${v}.pyc`)).score).toBe(0);
     }
-  });
-
-  test("a PyInstaller archive gets a note: its .pyc files are not cleaned", () => {
-    const exe = Buffer.concat([Buffer.from("\x7fELF"), Buffer.alloc(1 << 20), Buffer.from("MEI\x0c\x0b\x0a\x0b\x0e"), Buffer.alloc(80)]);
-    const r = scan(pyDir("pyi", { app: exe }));
-    expect(r.notes.join(" ")).toContain("PyInstaller");
   });
 
 });
@@ -229,5 +223,43 @@ describe.skipIf(!sandboxWorks)(".pyc decoys", () => {
     const rep = sanitize(dir, join(tmp, "odd-out"));
     expect(rep.actions.map((a) => a.kind)).toEqual(["pyc-kept-unchanged"]);
     expect(readFileSync(join(tmp, "odd-out", "odd.pyc")).equals(odd)).toBe(true);
+  });
+});
+
+// ledger.py312.bla.pyinstaller is a real PyInstaller 6.22.3 onedir executable (CPython 3.12), built once with
+// `pyinstaller --name ledger-onedir -p . app.py`. `ledger.pyc` there is a copy of the BLA-woven ledger.py312.bla.pyc (a sourceless
+// module) and app.py is `import sys, ledger; sys.exit(ledger.main())`. The PYZ keeps BLA's decoy code objects; PyInstaller drops the honey trailer.
+describe.skipIf(!sandboxWorks)("PyInstaller bundle", () => {
+  const bundle = join(FIXTURES, "ledger.py312.bla.pyinstaller");
+  const py312 = pythonForMagic(pycMagic(readFixture("ledger.py312.pyc"))!);
+
+  test("scan reads the .pyc files inside the bundle and flags the decoys", () => {
+    const r = scan(bundle);
+    expect(r.level).toBe("hardened");
+    const f = r.findings.find((x) => x.id === "pyc_decoy_code")!;
+    expect(f.count).toBeGreaterThanOrEqual(3);
+    expect(f.where[0]).toContain("PYZ.pyz_extracted/ledger.pyc");
+  });
+
+  test.skipIf(!py312)("sanitize drops the decoy code objects, keeps every real one, leaves out the raw PYZ and the original alone", () => {
+    const before = readFileSync(bundle);
+    const rep = sanitize(bundle, join(tmp, "pyi-out"));
+    expect(rep.actions.map((a) => a.kind).sort()).toEqual(["pyc-decoys-dropped", "pyinstaller-extracted"]);
+    const cleaned = join(tmp, "pyi-out", "ledger.py312.bla.pyinstaller");
+    expect(existsSync(join(cleaned, "PYZ.pyz"))).toBe(false);
+    // same bytecode and constants as ledger.py compiled by CPython 3.12: nothing real was lost, nothing decoy is left
+    const same = Bun.spawnSync([py312!, "-I", "-c", "import marshal,sys;a,b=[marshal.loads(open(p,'rb').read()[16:]) for p in sys.argv[1:]];sys.exit(not(a.co_code==b.co_code and a.co_consts==b.co_consts))", join(cleaned, "PYZ.pyz_extracted", "ledger.pyc"), join(FIXTURES, "ledger.py312.pyc")]);
+    expect(same.exitCode).toBe(0);
+    expect(scan(cleaned).score).toBe(0);
+    expect(readFileSync(bundle).equals(before)).toBe(true);
+  });
+
+  test("a file that only ends in the PyInstaller cookie is reported and copied unchanged", () => {
+    const fake = Buffer.concat([Buffer.from("\x7fELF"), Buffer.alloc(4096), Buffer.from("MEI\x0c\x0b\x0a\x0b\x0e"), Buffer.alloc(80)]);
+    const dir = pyDir("fake-pyi", { app: fake });
+    expect(scan(dir).notes.join(" ")).toContain("PyInstaller bundle not read");
+    const rep = sanitize(dir, join(tmp, "fake-pyi-out"));
+    expect(rep.actions.map((a) => a.kind)).toEqual(["pyinstaller-kept-unchanged"]);
+    expect(readFileSync(join(tmp, "fake-pyi-out", "app")).equals(fake)).toBe(true);
   });
 });

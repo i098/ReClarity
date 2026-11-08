@@ -17,6 +17,7 @@ import { countBeamDecoys } from "./lib/beam.ts";
 import { REA_MAX_GO_BUILDINFO, REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
 import { findWasmDecoys, parseSections } from "./lib/wasm.ts";
 import { pycDecoyNames, tarpitDecoyCount } from "./lib/pytarpit.ts";
+import { extractBundle, isPyInstaller } from "./lib/pybox.ts";
 
 export const BLA_VERSION = "3.1.0";
 export const REA_ASAR_DEFAULT_HEADER = 16 * 1024 * 1024;
@@ -72,7 +73,6 @@ export const CONFIG_NAMES = [".blarc", ".blarc.json", "bla.config.json", ".bla-m
 export const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST/g;
 const ENCLAVE = /enclave|attestation|tpm2_|nitroenclave|vsock|hardware-sealed/gi;
 const DECOY_IPC = /delegatedToEnclave\s*:\s*true|fallbackStub\s*:\s*true/g;
-const PYINSTALLER_COOKIE = Buffer.from("MEI\x0c\x0b\x0a\x0b\x0e", "latin1");
 const MAX_JS = 16 * 1024 * 1024;
 export const MAX_BIN = 512 * 1024 * 1024;
 const MAX_FILES = 2000;
@@ -215,6 +215,22 @@ function scanPyc(bytes: Buffer, label: string, acc: Acc): void {
   acc.add("bait_text", label, text.match(BAIT)?.length ?? 0);
 }
 
+/** A PyInstaller bundle: unpack it in the sandbox and read every .pyc inside as a lone .pyc. Without bwrap or the extractor the bundle is not read, and the note says why. */
+function scanBundle(path: string, acc: Acc): void {
+  const x = extractBundle(path);
+  if (x.kind === "kept") return void acc.notes.push(`${path}: PyInstaller bundle not read: ${x.why}`);
+  try {
+    const pyc = readdirSync(x.dir, { recursive: true }).map(String).filter((f) => f.endsWith(".pyc"));
+    for (const f of pyc.slice(0, MAX_FILES)) {
+      const p = join(x.dir, f);
+      if (statSync(p).size <= MAX_JS) scanPyc(readFileSync(p), `${path}!${f}`, acc);
+    }
+    acc.notes.push(`${path}: PyInstaller bundle, ${pyc.length} .pyc files read`);
+  } finally {
+    x.cleanup();
+  }
+}
+
 function scanAsar(path: string, acc: Acc): void {
   const asar = openAsar(path);
   try {
@@ -310,7 +326,7 @@ function scanFile(path: string, size: number, acc: Acc): void {
   } else if (size <= MAX_BIN && isNativeExecutable(path)) {
     // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
     const bin = readFileSync(path);
-    if (bin.subarray(-65536).includes(PYINSTALLER_COOKIE)) acc.notes.push(`${path}: PyInstaller archive; its .pyc files are not read or cleaned. Clean the .py files before bundling, or extract it and run this on the .pyc files`);
+    if (isPyInstaller(path)) scanBundle(path, acc);
     scanNative(bin, path, acc);
   } else if (dataKind(path)) {
     try {

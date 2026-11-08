@@ -11,7 +11,6 @@
 import { FLUTTER_LIB } from "./formats.ts";
 import { entryData, readZip, replaceData, writeZip } from "./zip.ts";
 
-export const MAX_SNAPSHOT_HASHES = 64;
 const POOL_MARKER = Buffer.from("\0[BLA-FLUTTER-POOL-EXHAUST]\0", "utf8");
 const MAPPED_MARKER = Buffer.from("\0[BLA-FLUTTER-MAPPED]\0", "utf8");
 const VERSION_BLOCK = Buffer.from(

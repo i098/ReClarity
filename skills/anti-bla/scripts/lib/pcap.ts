@@ -3,7 +3,6 @@
 // carrying `[BLA-PCAP-SHIELD]`. tshark expands them past REA's 8 MiB JSON limit. The original records stay
 // byte for byte. A record is dropped only when its whole shape matches, never on the marker alone.
 
-export const REA_TSHARK_JSON_MAX = 8 * 1024 * 1024;
 const MARKER = Buffer.from("[BLA-PCAP-SHIELD]", "utf8");
 const HTTP_LINE = Buffer.from("GET /bla/tarpit/exhaust HTTP/1.1\r\nHost: enclave.internal\r\nUser-Agent: BLA-PCAP-Shield/1.0\r\n[BLA-PCAP-SHIELD] canary=", "utf8");
 const DNS_BAIT = Buffer.from("\n[BLA-PCAP-SHIELD]\n", "utf8");

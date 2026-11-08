@@ -5,7 +5,6 @@
 // The clean copy removes BLA's trailer and the filler. It keeps one JUMPDEST of the run: a real contract
 // that ends in a JUMPDEST then keeps it, and one extra inert JUMPDEST changes nothing.
 
-export const REA_EVM_INPUT_MAX = 4 * 1024 * 1024;
 /** Real code never ends in this many JUMPDESTs; BLA's smallest filler is 64 KiB. */
 export const MIN_FILLER_RUN = 1024;
 const JUMPDEST = 0x5b;

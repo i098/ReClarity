@@ -16,6 +16,7 @@ import { findSeeds, opaqueValue, parseJs, walk, type AnyNode, type Program } fro
 import { countBeamDecoys } from "./lib/beam.ts";
 import { REA_MAX_GO_BUILDINFO, REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
 import { findWasmDecoys, parseSections } from "./lib/wasm.ts";
+import { pycDecoyNames, tarpitDecoyCount } from "./lib/pytarpit.ts";
 
 export const BLA_VERSION = "3.1.0";
 export const REA_ASAR_DEFAULT_HEADER = 16 * 1024 * 1024;
@@ -64,11 +65,14 @@ const RULES: Record<string, { weight: number; min: number }> = {
   native_shield_trailer: { weight: 40, min: 1 },
   rustc_hash_flood: { weight: 40, min: 1 },
   go_buildinfo_flood: { weight: 40, min: 1 },
+  python_tarpit: { weight: 40, min: 1 },
+  pyc_decoy_code: { weight: 40, min: 3 },
 };
 export const CONFIG_NAMES = [".blarc", ".blarc.json", "bla.config.json", ".bla-manifest.json"];
-const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST/g;
+export const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST/g;
 const ENCLAVE = /enclave|attestation|tpm2_|nitroenclave|vsock|hardware-sealed/gi;
 const DECOY_IPC = /delegatedToEnclave\s*:\s*true|fallbackStub\s*:\s*true/g;
+const PYINSTALLER_COOKIE = Buffer.from("MEI\x0c\x0b\x0a\x0b\x0e", "latin1");
 const MAX_JS = 16 * 1024 * 1024;
 export const MAX_BIN = 512 * 1024 * 1024;
 const MAX_FILES = 2000;
@@ -197,6 +201,20 @@ function scanJs(src: string, label: string, acc: Acc): void {
   });
 }
 
+/** BLA's Python tarpit in a `.py` file, from text shapes alone. */
+function scanPy(src: string, label: string, acc: Acc): void {
+  acc.add("python_tarpit", label, tarpitDecoyCount(src));
+  acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
+  acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
+}
+
+/** BLA's decoy code objects and honey trailer in a `.pyc`: names sit in the marshal stream as plain bytes. */
+function scanPyc(bytes: Buffer, label: string, acc: Acc): void {
+  const text = bytes.toString("latin1");
+  acc.add("pyc_decoy_code", label, pycDecoyNames(text).size);
+  acc.add("bait_text", label, text.match(BAIT)?.length ?? 0);
+}
+
 function scanAsar(path: string, acc: Acc): void {
   const asar = openAsar(path);
   try {
@@ -291,7 +309,9 @@ function scanFile(path: string, size: number, acc: Acc): void {
     } catch {}
   } else if (size <= MAX_BIN && isNativeExecutable(path)) {
     // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
-    scanNative(readFileSync(path), path, acc);
+    const bin = readFileSync(path);
+    if (bin.subarray(-65536).includes(PYINSTALLER_COOKIE)) acc.notes.push(`${path}: PyInstaller archive; its .pyc files are not read or cleaned. Clean the .py files before bundling, or extract it and run this on the .pyc files`);
+    scanNative(bin, path, acc);
   } else if (dataKind(path)) {
     try {
       scanData(dataKind(path)!, path, size, acc);
@@ -307,6 +327,12 @@ function scanFile(path: string, size: number, acc: Acc): void {
   } else if ([".js", ".cjs", ".mjs"].includes(ext)) {
     if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
     else scanJs(readFileSync(path, "utf8"), path, acc);
+  } else if (ext === ".py") {
+    if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
+    else scanPy(readFileSync(path, "latin1"), path, acc);
+  } else if (ext === ".pyc") {
+    if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
+    else scanPyc(readFileSync(path), path, acc);
   } else if (ext === ".wasm" || ext === ".beam") {
     if (size > MAX_BIN) acc.notes.push(`${path}: over 512 MiB, skipped`);
     else if (ext === ".wasm") scanWasm(readFileSync(path), path, acc);
@@ -350,7 +376,7 @@ export function scan(target: string): ScanReport {
 if (import.meta.main) {
   const target = process.argv[2];
   if (!target) {
-    console.error("usage: bun scan.ts <dir|file.asar|file.js|binary>");
+    console.error("usage: bun scan.ts <dir|file.asar|file.js|file.py|file.pyc|binary>");
     process.exit(64);
   }
   console.log(JSON.stringify(scan(target), null, 2));

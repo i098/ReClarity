@@ -44,10 +44,10 @@ function hashNode(path: string): string {
 /** Hash of a file, or of a directory's names and contents. The named path is resolved; links below it hash their link text and are never followed. */
 export const treeHash = (path: string): string => hashNode(realpathSync(path));
 
-/** Coverage runs plain JS under node: a folder, or a `.js` file. Never an ASAR, WASM, BEAM or native binary. */
+/** Coverage runs plain JS under node (a folder or a `.js` file) and Python source under coverage.py (a folder or a `.py` file). Never an ASAR, a lone .pyc, WASM, BEAM or a native binary. */
 const executable = (target: string): boolean => {
   const real = realpathSync(target);
-  return statSync(real).isDirectory() || /\.(c|m)?js$/.test(real);
+  return statSync(real).isDirectory() || /\.((c|m)?js|py)$/.test(real);
 };
 
 /** Sanitize, then fold, into work/<tag>. Returns the cleaned path; coverage notes go to `notes`. */
@@ -88,7 +88,7 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
   const s = scan(target);
   const cleaned = s.score > 0;
   const withCoverage = !!opts.coverage && executable(target);
-  if (opts.coverage && !withCoverage) notes.push("coverage skipped: node runs plain JS only, not an ASAR, WASM, BEAM or native binary");
+  if (opts.coverage && !withCoverage) notes.push("coverage skipped: node runs plain JS and coverage.py runs Python source only, not an ASAR, a lone .pyc, WASM, BEAM or a native binary");
   const prepared = cleaned ? prepare(target, opts.work, "a", withCoverage, notes) : target;
   const rep: RunReport = { tool: "anti-bla/run", target, scan: s, attempts: [], prepared, verdict: cleaned ? "cleaned" : "plain-rea", notes };
   if (opts.runtimeGuard) rep.runtimeGuard = runtimeGuard(target);

@@ -9,7 +9,7 @@
 //   bun bench.ts --plain a.asar --hardened b.asar --rea "node rea.mjs" --work dir --facts slugify,wordCount [--runs 3] [--out bench.json]
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { TRAP } from "./coverage.ts";
+import { TRAP } from "./lib/trap.ts";
 import { isReaCapacityError } from "./guard.ts";
 import { prepare } from "./run.ts";
 

@@ -10,8 +10,8 @@ BLA makes a build hard to read for an AI agent. It plants decoy code, floods REA
 
 - **Scan** the build for BLA trap shapes before the first REA call. Score 0 means plain REA, with no extra cost.
 - **Clean a copy.** Fold opaque predicates, drop decoy entries, strip fuse flood. The original stays unchanged.
-- **Check by running.** Run the build in a sandbox (bwrap) with coverage. Code that never runs is "not run". Only unreferenced never-run code that carries trap words is a "decoy suspect", never evidence.
-- **Guard the budget.** Hard token and time caps per target. One retry after a REA capacity error. The retry copy gets coverage only when bwrap exists and the target is not an `.asar`. If it has the same bytes as the first copy, the retry is skipped and the report says why. The same bytes are never retried: to run a target again, use a fresh work dir.
+- **Check by running.** Run the build in a sandbox (bwrap) with coverage (V8 for JS, coverage.py for Python). Code that never runs is "not run". Only unreferenced never-run code that carries trap words is a "decoy suspect", never evidence. In Python the shape must also match BLA's tarpit exactly.
+- **Guard the budget.** Hard token and time caps per target. One retry after a REA capacity error. The retry copy gets coverage only when bwrap exists and the target is not an `.asar` or a lone `.pyc`. If it has the same bytes as the first copy, the retry is skipped and the report says why. The same bytes are never retried: to run a target again, use a fresh work dir.
 
 ## What it refuses
 
@@ -29,7 +29,7 @@ npx skills add i098/ReClarity --skill anti-bla
 
 After install, run `bun install` in the installed `anti-bla` folder. It pins `acorn`.
 
-Requires [Bun](https://bun.sh). The coverage step also needs `bwrap`.
+Requires [Bun](https://bun.sh). The coverage step also needs `bwrap`. Python targets also need `python3` on `PATH`; the first coverage run builds a venv with coverage.py in `~/.cache/anti-bla/pyvenv` (`ANTI_BLA_PYVENV` moves it), which needs the network once. Cleaning a `.pyc` needs a `python3.X` on `PATH` that matches the file's version.
 
 For the tests, run `bun install` at the repo root, then `bun test`.
 
@@ -38,7 +38,7 @@ For the tests, run `bun install` at the repo root, then `bun test`.
 ```bash
 bun skills/anti-bla/scripts/scan.ts <target>            # score 0-100, reads only
 bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-javascript-application {target}"
-bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "..." --coverage   # plain JS only
+bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "..." --coverage   # plain JS or Python source
 bun skills/anti-bla/scripts/runtime-guard.ts <target>   # JS, Electron main or .asar: run with and without inspector signals, report what differs
 ```
 
@@ -65,7 +65,9 @@ Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `runtime-guard`, `guard`, `run
 | SQLite honey tables, model nesting breaker, PCAP flood, EVM filler, Flutter pool decoys | Clean copy per format: drop BLA's entries, keep real content (`sanitize`) |
 | WASM, Go, Rust, BEAM caps | `sanitize.ts` writes a clean copy: alias exports and decoy sections, Go build-info plant, BLA native trailer, decoy rustc paths, BEAM decoy chunks and atoms |
 | Runtime guard (CDP, Frida, `--inspect`) | Built: `runtime-guard.ts` runs the build in the sandbox with nothing attached, then once per inspector signal, and reports the output, IPC, file and code-path differences. The not-attached run is the observation |
-| Python `.pyc` tarpit | Planned: `coverage.py` in the sandbox |
+| Python tarpit in `.py` source (decoy defs, opaque guards, chaff) | Built: `coverage.py` in the sandbox; only BLA-shaped defs that never ran and no live code names are dropped (`coverage.ts`) |
+| Python `.pyc` decoy code objects and honey trailer | Built: unreferenced BLA-shaped code objects and the trailer are dropped from a copy (`sanitize.ts`, `lib/pycclean.py`) |
+| PyInstaller bundle | Limit: the bundled `.pyc` files are not read or cleaned. Clean the `.py` files before bundling |
 
 Full table: [docs/techniques.md](docs/techniques.md). Risks: [docs/risks.md](docs/risks.md).
 

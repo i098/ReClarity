@@ -162,7 +162,7 @@ describe("run wrapper", () => {
     writeFileSync(asar, floodAsar(150));
     const r = run(asar, { work: join(tmp, "w6a"), coverage: true });
     expect(r.verdict).toBe("cleaned");
-    expect(r.notes).toEqual(["coverage skipped: node runs plain JS only, not an ASAR, WASM, BEAM or native binary"]);
+    expect(r.notes).toEqual(["coverage skipped: node runs plain JS and coverage.py runs Python source only, not an ASAR, a lone .pyc, WASM, BEAM or a native binary"]);
   });
 
   test("a second run in the same work dir does not keep files of the first", () => {

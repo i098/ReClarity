@@ -3,6 +3,7 @@
 // cut BLA's native shield (Go, Rust, Flutter), drop WASM alias exports and BEAM decoy chunks, drop BLA config
 // files, and clean the data formats (SQLite, models, PCAP, EVM, Dart pools). The original is never written.
 // Code is never deleted here: logic that only looks like a decoy is handled by coverage.ts ("not run").
+// The one exception is a .pyc: BLA's woven decoy code objects are provably unused there (nothing points at them), so they go.
 import { copyFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, truncateSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
@@ -12,14 +13,16 @@ import { MAX_APK_FILE, MAX_EVM_FILE, MAX_PCAP_FILE, dataKind } from "./lib/forma
 import { SENTINEL, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
 import { cleanModel } from "./lib/model.ts";
 import { cleanPcap } from "./lib/pcap.ts";
+import { cleanPyc } from "./lib/pybox.ts";
+import { pycDecoyNames } from "./lib/pytarpit.ts";
 import { dropHoney, isSqlite } from "./lib/sqlite.ts";
-import { CONFIG_NAMES, FLOOD_MIN, MAX_BIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
+import { BAIT, CONFIG_NAMES, FLOOD_MIN, MAX_BIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
 import { cleanBeam } from "./lib/beam.ts";
 import { REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
 import { cleanWasm } from "./lib/wasm.ts";
 
 export interface Action {
-  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "copied" | "skipped-symlink" | "wasm-decoys-dropped" | "beam-decoys-dropped" | "native-trailer-cut" | "go-buildinfo-plant-zeroed" | "rustc-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed";
+  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "pyc-decoys-dropped" | "pyc-kept-unchanged" | "copied" | "skipped-symlink" | "wasm-decoys-dropped" | "beam-decoys-dropped" | "native-trailer-cut" | "go-buildinfo-plant-zeroed" | "rustc-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed";
   path: string;
   detail?: string;
 }
@@ -36,6 +39,7 @@ export interface SanitizeReport {
 
 const MIB = 1024 * 1024;
 const REA_ASAR_MAX = 256 * MIB;
+const MAX_PYC = 16 * MIB;
 const SUSPECT = /(^|\/)(enclave|tee|attestation)[^/]*/i;
 
 function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
@@ -112,6 +116,26 @@ function sanitizeBinary(src: string, dst: string, r: SanitizeReport): void {
   if (rust.length) r.actions.push({ kind: "rustc-decoys-zeroed", path: src, detail: `${rust.length} decoy rustc hashes zeroed of ${rustFlood.distinct}` });
 }
 
+/** A .pyc that carries BLA decoy names or honey text gets the cleaner; every other one is copied as it is. */
+function sanitizePyc(src: string, dst: string, r: SanitizeReport): void {
+  const text = readFileSync(src).toString("latin1");
+  if (pycDecoyNames(text).size < 3 && !text.match(BAIT)) {
+    copyFileSync(src, dst);
+    return;
+  }
+  const out = cleanPyc(src, dst);
+  if (out.kind === "cleaned" && !out.removed.length && !out.trailerDropped) {
+    copyFileSync(src, dst); // nothing of BLA's in it: keep the exact bytes, not a re-marshalled copy
+    return;
+  }
+  if (out.kind === "cleaned") {
+    r.actions.push({ kind: "pyc-decoys-dropped", path: src, detail: `${out.removed.length} decoy code objects dropped, ${out.trailerDropped} B honey trailer dropped` });
+    return;
+  }
+  copyFileSync(src, dst);
+  r.actions.push({ kind: "pyc-kept-unchanged", path: src, detail: out.why });
+}
+
 /** Clean one data format file from src into dst. A file that is not BLA-shaped is copied byte for byte. */
 function sanitizeData(kind: NonNullable<ReturnType<typeof dataKind>>, src: string, dst: string, r: SanitizeReport): void {
   const plain = (detail?: string): void => {
@@ -181,6 +205,7 @@ function copyTree(src: string, dst: string, r: SanitizeReport, isNamedByGlue: (n
   const ext = extname(src);
   if (CONFIG_NAMES.includes(basename(src))) r.actions.push({ kind: "dropped-config", path: src });
   else if (ext === ".asar") sanitizeAsar(src, dst, r);
+  else if (ext === ".pyc" && st.size <= MAX_PYC) sanitizePyc(src, dst, r);
   else if (ext === ".wasm") sanitizeWasm(src, dst, r, isNamedByGlue);
   else if (ext === ".beam") sanitizeBeam(src, dst, r);
   else if (st.size <= MAX_BIN && isNativeExecutable(src)) sanitizeBinary(src, dst, r);

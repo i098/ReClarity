@@ -1,10 +1,13 @@
 #!/usr/bin/env bun
-// Run a JS target in a bwrap sandbox with V8 coverage; split its top-level code into
-// run / not run / decoy suspect. Nothing is deleted from the original.
+// Run a JS target in a bwrap sandbox with V8 coverage (a Python target with coverage.py); split its
+// top-level code into run / not run / decoy suspect. Nothing is deleted from the original.
 //   not run       never executed in this run. May be rare-input logic: kept.
 //   decoy suspect not run AND carries BLA trap words. Removed from the --out copy only, and
 //                 saved whole in <out>.quarantine.json (beside the copy), so it can be put back.
 //   bait that ran carries trap words but executed: listed, never an Observation, kept.
+//   tarpit ran    (Python) BLA tarpit code that ran only because other tarpit code called it. Removed with the decoys.
+// A Python decoy is judged by BLA's exact shapes (lib/pytarpit.ts), not by trap words: names, signature,
+// body, and that no live code names it. Weave lines BLA put inside real functions go when their decoys go.
 // Target code is untrusted: it runs only inside bwrap on this host (no network, no home,
 // no secrets in env, read-only root, time limit). Without bwrap the tool refuses.
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -13,6 +16,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { asData } from "./guard.ts";
 import { parseJs, type AnyNode } from "./lib/js.ts";
 import { isKeepAlive, uses } from "./lib/prune.ts";
+import { pyFacts, runUnderCoveragePy } from "./lib/pybox.ts";
+import { classifyPy, dropLines, splitLines, type PyFacts, type PyFileInput, type PyKind } from "./lib/pytarpit.ts";
+import { TRAP } from "./lib/trap.ts";
 
 export interface RunOptions {
   timeoutSec?: number;
@@ -25,7 +31,7 @@ export interface RunResult {
   timedOut: boolean;
   stderr: string;
 }
-export type Kind = "run" | "not_run" | "decoy_suspect" | "bait_ran";
+export type Kind = PyKind;
 export interface Statement {
   start: number;
   end: number;
@@ -35,6 +41,8 @@ export interface Statement {
 export interface FileCoverage {
   file: string;
   statements: Statement[];
+  /** Python only: lines BLA wove into real functions that go with their decoys. */
+  weave?: Statement[];
 }
 export interface CoverageReport {
   tool: "anti-bla/coverage";
@@ -46,7 +54,6 @@ export interface CoverageReport {
   notes: string[];
 }
 
-export const TRAP = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST|delegatedToEnclave|fallbackStub|hardware-sealed|attestation/i;
 export const SANDBOX_DIR = "/app";
 
 /** bwrap prefix every sandboxed run shares: no network, read-only system and node tree, no env. */
@@ -173,8 +180,57 @@ function classify(src: string, hit: Uint8Array | undefined): Statement[] {
   return stmts.map(({ start, end, kind, head }) => ({ start, end, kind, head }));
 }
 
+const PY_SKIP = new Set(["node_modules", ".git", "__pycache__", ".venv", "venv", "site-packages"]);
+const MAX_PY_FILES = 2000;
+const MAX_PY_BYTES = 16 * 1024 * 1024;
+
+function pyFiles(root: string, rel = ""): string[] {
+  const out: string[] = [];
+  for (const e of readdirSync(join(root, rel), { withFileTypes: true })) {
+    if (out.length >= MAX_PY_FILES || PY_SKIP.has(e.name)) continue;
+    const p = join(rel, e.name);
+    if (e.isDirectory()) out.push(...pyFiles(root, p));
+    else if (e.isFile() && e.name.endsWith(".py") && lstatSync(join(root, p)).size <= MAX_PY_BYTES) out.push(p);
+  }
+  return out.slice(0, MAX_PY_FILES);
+}
+
+/** A target is Python when it is one .py file, or a folder with .py files and no package.json. */
+export const isPyTarget = (abs: string): boolean => (statSync(abs).isDirectory() ? !existsSync(join(abs, "package.json")) && pyFiles(abs).length > 0 : abs.endsWith(".py"));
+
+const pyEntryOf = (rels: string[]): string | undefined => ["__main__.py", "main.py", "app.py"].find((n) => rels.includes(n));
+
+const isPyFacts = (v: unknown): v is PyFacts => typeof v === "object" && v !== null && ("error" in v ? typeof v.error === "string" : "stmts" in v && Array.isArray(v.stmts) && "nested" in v && Array.isArray(v.nested));
+
+function coveragePy(target: string, abs: string, opts: RunOptions): CoverageReport {
+  const isDir = statSync(abs).isDirectory();
+  const root = isDir ? abs : dirname(abs);
+  const rels = isDir ? pyFiles(abs) : [basename(abs)];
+  const entry = isDir ? pyEntryOf(rels) : basename(abs);
+  const counts: Record<Kind, number> = { run: 0, not_run: 0, decoy_suspect: 0, tarpit_ran: 0, bait_ran: 0 };
+  const report = (over: Partial<CoverageReport>): CoverageReport => ({ tool: "anti-bla/coverage", target, exitCode: null, timedOut: false, files: [], counts, notes: [], ...over });
+  if (!entry && !opts.driver) return report({ notes: ["no __main__.py, main.py or app.py to run, and no --driver: nothing ran, nothing is marked decoy"] });
+  if (!hasSandbox()) throw new Error("refusing to run target code: bwrap not found (sandbox required, this host only)");
+  const sources = new Map(rels.map((r) => [r, readFileSync(join(root, r), "latin1")]));
+  const facts = pyFacts(root, rels);
+  const run = runUnderCoveragePy(root, entry ?? "", opts.driver ? resolve(opts.driver) : undefined, opts.timeoutSec ?? 30);
+  const inputs: PyFileInput[] = rels.map((file) => {
+    const f = facts[file];
+    const lines = run.executed.get(file);
+    return { file, src: sources.get(file)!, facts: isPyFacts(f) ? f : { error: "no facts", stmts: [], nested: [] }, executed: lines?.size ? lines : undefined };
+  });
+  const files: FileCoverage[] = classifyPy(inputs).map((c) => ({ file: c.file, statements: c.statements, weave: c.weave }));
+  for (const f of files) for (const s of f.statements) counts[s.kind]++;
+  const notes = [...(run.timedOut ? ["run hit the time limit; statements after it may show as not run, nothing quarantined"] : []), ...(run.exitCode !== 0 ? [`target exited with ${run.exitCode ?? "a signal"}; coverage labels unreliable, no fixtures built, nothing quarantined: ${asData(run.stderr.trim().split("\n").at(-1) ?? "", "target-stderr")}`] : [])];
+  const bad = inputs.filter((i) => i.facts.error).map((i) => i.file);
+  if (bad.length) notes.push(`not parsed, so never judged: ${bad.slice(0, 5).join(", ")}`);
+  if (!files.length) notes.push("no covered files: the target never loaded; nothing is marked decoy");
+  return report({ exitCode: run.exitCode, timedOut: run.timedOut, files, notes });
+}
+
 export function coverage(target: string, opts: RunOptions = {}): CoverageReport {
   const abs = resolve(target);
+  if (isPyTarget(abs)) return coveragePy(target, abs, opts);
   const isDir = statSync(abs).isDirectory();
   const root = isDir ? abs : dirname(abs);
   const rels = isDir ? jsFiles(abs) : [basename(abs)];
@@ -183,7 +239,7 @@ export function coverage(target: string, opts: RunOptions = {}): CoverageReport 
   try {
     const hits = loadCounts(run.covDir, new Map([...sources].map(([k, v]) => [k, v.length])));
     const files: FileCoverage[] = [...sources].filter(([k]) => hits.has(k)).map(([k, v]) => ({ file: k, statements: classify(v, hits.get(k)) }));
-    const counts: Record<Kind, number> = { run: 0, not_run: 0, decoy_suspect: 0, bait_ran: 0 };
+    const counts: Record<Kind, number> = { run: 0, not_run: 0, decoy_suspect: 0, tarpit_ran: 0, bait_ran: 0 };
     for (const f of files) for (const s of f.statements) counts[s.kind]++;
     const notes = [...(run.timedOut ? ["run hit the time limit; statements after it may show as not run, nothing quarantined"] : []), ...(run.exitCode !== 0 ? [`target exited with ${run.exitCode ?? "a signal"}; coverage labels unreliable, no fixtures built, nothing quarantined: ${asData(run.stderr.split("\n")[0] ?? "", "target-stderr")}`] : [])];
     if (!files.length) notes.push("no covered files: the target never loaded; nothing is marked decoy");
@@ -198,12 +254,23 @@ export function quarantineCopy(target: string, report: CoverageReport, out: stri
   const abs = resolve(target);
   const isDir = statSync(abs).isDirectory();
   const root = isDir ? abs : dirname(abs);
-  const quarantine: { file: string; start: number; text: string }[] = [];
+  const quarantine: { file: string; start: number; end?: number; text: string }[] = [];
   mkdirSync(out, { recursive: true });
   cpSync(abs, isDir ? out : join(out, basename(abs)), { recursive: true, filter: (s) => s === abs || !lstatSync(s).isSymbolicLink() }); // files without coverage ride along; covered JS is rewritten below
+  const sure = report.exitCode === 0 && !report.timedOut;
   for (const f of report.files) {
+    if (f.file.endsWith(".py")) {
+      // lines, not offsets: `start`..`end` are 1-based and inclusive; `latin1` keeps every byte of a non-UTF-8 source
+      const src = readFileSync(join(root, f.file), "latin1");
+      const cut = sure ? [...f.statements.filter((x) => x.kind === "decoy_suspect" || x.kind === "tarpit_ran"), ...(f.weave ?? [])] : [];
+      const lines = splitLines(src);
+      for (const r of cut) quarantine.push({ file: f.file, start: r.start, end: r.end, text: lines.slice(r.start - 1, r.end).join("\n") });
+      mkdirSync(dirname(join(out, f.file)), { recursive: true });
+      writeFileSync(join(out, f.file), cut.length ? dropLines(src, cut) : src, "latin1");
+      continue;
+    }
     let src = readFileSync(join(root, f.file), "utf8");
-    const suspects = report.exitCode === 0 && !report.timedOut ? f.statements.filter((x) => x.kind === "decoy_suspect") : [];
+    const suspects = sure ? f.statements.filter((x) => x.kind === "decoy_suspect") : [];
     for (const s of suspects.sort((a, b) => b.start - a.start)) {
       quarantine.push({ file: f.file, start: s.start, text: src.slice(s.start, s.end) });
       src = src.slice(0, s.start) + src.slice(src[s.end] === "\n" ? s.end + 1 : s.end);
@@ -220,7 +287,7 @@ if (import.meta.main) {
   const opt = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
   const target = args[0];
   if (!target || target.startsWith("--")) {
-    console.error("usage: bun coverage.ts <dir|file.js> [--driver d.js] [--timeout sec] [--out copy-dir]");
+    console.error("usage: bun coverage.ts <dir|file.js|file.py> [--driver d.js] [--timeout sec] [--out copy-dir]");
     process.exit(64);
   }
   const rep = coverage(target, { driver: opt("--driver"), timeoutSec: opt("--timeout") ? Number(opt("--timeout")) : undefined });

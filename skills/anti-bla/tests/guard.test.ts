@@ -33,12 +33,22 @@ describe("retry once", () => {
     expect(isCapacityError("ENOENT: no such file")).toBe(false);
   });
 
-  test("REA's resource_constraint error object (BEAM chunk budget, Go build-info limit) is a capacity error; invalid_request is not", () => {
+  test("REA's resource_constraint error object (BEAM chunk budget, Go build-info limit) is a capacity error; an unrelated invalid_request is not", () => {
     const beam = JSON.stringify({ code: "resource_constraint", category: "resource_constraint", message: "BEAM form exceeds the 64-chunk budget." });
     const go = JSON.stringify({ code: "invalid_request", category: "invalid_input", message: "Analysis input is invalid." });
     expect(isReaCapacityError(1, beam, "")).toBe(true);
     expect(isReaCapacityError(1, go, "")).toBe(false);
     expect(isReaCapacityError(0, beam, "")).toBe(false);
+  });
+
+  test("the Go balanced framing error is a capacity error in REA's details.issues or in the message; other invalid_request is not", () => {
+    const real = JSON.stringify({ code: "invalid_request", category: "invalid_input", message: "Analysis input is invalid. Check the arguments and try again.", details: { operation: "inspect_go_binary", issues: [{ path: ["path"], reason: "invalid_format", message: "Selected artifact /x/go.elf: Go module string framing is invalid" }] } });
+    const bare = JSON.stringify({ code: "invalid_request", message: "Go module string framing is invalid" });
+    const other = JSON.stringify({ code: "invalid_request", message: "Analysis input is invalid.", details: { issues: [{ message: "path is required" }] } });
+    expect(isReaCapacityError(1, real, "")).toBe(true);
+    expect(isReaCapacityError(1, bare, "")).toBe(true);
+    expect(isReaCapacityError(1, other, "")).toBe(false);
+    expect(isReaCapacityError(0, real, "")).toBe(false);
   });
 
   test("one retry on a different input; never the same input; never a second retry", () => {
@@ -102,6 +112,15 @@ describe("run wrapper", () => {
       expect(r.attempts).toHaveLength(2);
       expect(r.prepared).toContain("b-quarantine");
       expect(readFileSync(join(r.prepared), "utf8")).not.toContain("shadow");
+    });
+
+    test("the Go framing envelope on the first copy counts as a cap: one retry on the pruned copy", () => {
+      const env = JSON.stringify({ code: "invalid_request", message: "Analysis input is invalid.", details: { issues: [{ message: "Selected artifact x: Go module string framing is invalid" }] } });
+      const flag = join(tmp, "once-go");
+      const r = run(decoy, { work: join(tmp, "w11go"), rea: `if [ -e ${flag} ]; then exit 0; fi; touch ${flag}; echo '${env}'; exit 1` });
+      expect(r.verdict).toBe("ok");
+      expect(r.attempts).toHaveLength(2);
+      expect(r.prepared).toContain("b-quarantine");
     });
 
     test("a capacity error on both copies is reported after the retry", () => {

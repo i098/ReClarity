@@ -35,7 +35,7 @@ Install once: `bun install` in `skills/anti-bla/` (pins `acorn`). All tools run 
 
 ## Triggers
 
-- A REA capacity error: "budget exceeded", "conservatively bounded", "header/index admission is limited", a sentinel limit, `resource_constraint` (BEAM chunk budget, Go build-info limit), or `invalid_request` with "Go module string framing is invalid" (BLA Go plant). The last one is not a cap: `run.ts` never sends it back as a retry, because it scans first and gives REA the cleaned copy of every build it recognizes. Run `run.ts`, not REA on the original.
+- A REA capacity error: "budget exceeded", "conservatively bounded", "header/index admission is limited", a sentinel limit, `resource_constraint` (BEAM chunk budget, Go build-info limit), or `invalid_request` with "Go module string framing is invalid" (BLA Go plant; the message sits in `details.issues[].message`). All of these trigger the one retry on the cleaned copy. Run `run.ts`, not REA on the original.
 - Enclave, attestation, TPM, vsock or "hardware-sealed" words in findings.
 - `.blarc`, `.blarc.json`, `bla.config.json` or `.bla-manifest.json` in the target.
 - `runtime_guard` in the scan, or any runtime capture (CDP, Frida, `node --inspect`) planned on a build that might check for one: run `runtime-guard.ts`. `state-only` and `code-paths-only` mean the guard is decorative (BLA 3.1.0's own contract): capture as usual and ignore the flag. `output-diverges` means attaching changes behavior: use the baseline, not an attached capture.

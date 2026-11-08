@@ -31,7 +31,7 @@ Arm C is not equal to arm A:
 ## Not run
 
 - No agent (Claude/Codex) was run on the evidence. "Attacker tokens" and "hidden-test accuracy" from the plan are not measured. Evidence tokens above are REA's own `--token-count`.
-- Other formats (WASM, SQLite, Python, Go, Rust, BEAM, PCAP) are out of scope.
+- SQLite, model, Python and PCAP are out of scope. WASM, Go, Rust and BEAM are in the next section.
 - One fixture and one BLA seed. Fuses ran on a hand-made fake Electron binary with BLA's fuse decoy shapes, not a real Electron build.
 - The 300k token cap and 30 minute cap are starting values. Arm C used 618k evidence tokens, which a 300k cap would reject; tune it from more runs.
 
@@ -67,3 +67,26 @@ The `cdp` and `frida` probes only set the globals BLA reads. To check them again
 - **Probe vs real:** `runtime-guard.ts` on the same wrapper (`--entry w.js`) reports `output-diverges` for `inspect`, `remote-debugging`, `cdp` and `frida` through `file:state.json`. For `inspect` and `cdp`, its probed `state.json` is `[["_enclaveRuntimeGateway_27e3",true]]`, the same as the real CDP run. For `frida` the real run stays `false`.
 - **Frida attach to a running node** (`instrument-with-frida attach <pid>`) failed: `Unable to access /proc/<pid>/mem: Permission denied` (`kernel.yama.ptrace_scope=1`, the target is not a child of REA). Spawn works, so spawn is what I ran.
 - Not run: a real CDP client against an Electron window (no display here), and any guard that checks timing or `TracerPid`. I found no such check in the BLA 3.1.0 runtime shields I read.
+
+## WASM, BEAM, Go and Rust (REA inspectors)
+
+Run on 2026-11-08 on this host. These runs are a single pass per file: they show what REA does with the hardened and the cleaned copy, not wall-time statistics. REA 6.8.0 (commit `015a02d`), WABT 1.0.42 (`REA_WABT_BIN_DIRECTORY`), BLA 3.1.0 (commit `41345ff`), seed `fixture-1`. Each fixture is real BLA output: the protect function of BLA's own `src/shields/formats/*.ts` run on a plain input. `sanitize.ts` wrote the cleaned copy; the REA command is the inspector for the format.
+
+| Format | Input (plain) | Intensity | REA on hardened | REA on cleaned |
+| --- | --- | --- | --- | --- |
+| WASM `inspect-wasm-artifact` | add and mul module, 56 B | bankrupt (6,879,943 B, 252 exports) | ok, interface `partial` (232 of 252 entries), evidence 21.6 MB, 5.0 s | ok, interface `complete` (2 entries), 56 B, evidence 6.4 KB, 3.9 s |
+| WASM | same | maximum (23,676 B, 10 exports) | ok, interface `complete`, 10 entries, 8 of them aliases | ok, 56 B, 2 entries |
+| BEAM `inspect-erlang-beam` | 168 B form, 6 chunks | balanced (66 decoy chunks) | `resource_constraint`: "BEAM form exceeds the 64-chunk budget" | ok; sha256 equals the plain input |
+| BEAM | same | bankrupt (254 decoy chunks, 4157 canary atoms) | same error | ok; sha256 equals the plain input |
+| Go `inspect-go-binary` | BLA mapped Go ELF (`buildMappedGoFlutterElfFixture`), 51,339 B | bankrupt (1.2 MB, oversize build-info plant) | `resource_constraint`: "Go build-info string length exceeds the 1 MiB limit" | ok, 51,339 B |
+| Go | same | balanced | `invalid_request`: "Go module string framing is invalid" | **same error: not fixed** |
+| Rust `inspect-rust-binary` | `rustc -O` hello world, 4,540,000 B | balanced (68 rustc hashes) and bankrupt (5,704,717 B) | ok (no cap hit) | ok; sha256 equals the plain input, both intensities |
+
+What this shows:
+
+- **WASM, BEAM:** the cleaned copy is the plain module, and REA reads it fully. BEAM cleaned bytes equal the plain input exactly. WASM hardened output fits REA at maximum, so the gain there is a smaller and exact export list; at bankrupt REA already gave a partial interface.
+- **Go bankrupt:** the cap is removed. BLA overwrote the real build info with its plant, so the cleaned copy has none (`build_info: null`, as the plain fixture has). It is not recovered.
+- **Go balanced: not fixed.** BLA rewrites bytes inside the binary (over 36,000 bytes differ from the plain fixture). `sanitize.ts` cuts the trailer and fuse decoys, but REA still rejects the module string framing. The original is not recoverable from the hardened file.
+- **Rust:** for a real Rust binary, BLA puts the 68 rustc hashes in the trailer. `sanitize.ts` cuts it and the result is byte-identical to the plain binary. REA 6.8.0 did not hit its 64-hash cap on the hardened file in this run, so no failing-to-passing change is shown: the proof is the identity of the bytes.
+- **Not run:** no real Go compiler binary was built (no `go` on this host); the Go fixture is BLA's own mapped ELF. No real Mach-O or PE was run. `wasm-objdump` and `wasm-validate` pass on the cleaned WASM; no browser or Node ran the cleaned module.
+- `run.ts` treats REA's `resource_constraint` error object as a capacity error, so a BEAM or Go cap hit triggers the one retry on the cleaned copy. `invalid_request` does not.

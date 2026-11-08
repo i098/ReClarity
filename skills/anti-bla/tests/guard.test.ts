@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CoverageReport } from "../scripts/coverage.ts";
-import { MAX_FIXTURES, admit, asData, check, fixtureTargets, isCapacityError, mayRetry, newLedger } from "../scripts/guard.ts";
+import { MAX_FIXTURES, admit, asData, check, fixtureTargets, isCapacityError, isReaCapacityError, mayRetry, newLedger } from "../scripts/guard.ts";
 import { run, treeHash } from "../scripts/run.ts";
 import { FIXTURES, floodAsar } from "./fixtures/make.ts";
 
@@ -31,6 +31,24 @@ describe("retry once", () => {
     expect(isCapacityError(rea)).toBe(true);
     expect(isCapacityError("ASAR header/index admission is limited to 16 MiB.")).toBe(true);
     expect(isCapacityError("ENOENT: no such file")).toBe(false);
+  });
+
+  test("REA's resource_constraint error object (BEAM chunk budget, Go build-info limit) is a capacity error; an unrelated invalid_request is not", () => {
+    const beam = JSON.stringify({ code: "resource_constraint", category: "resource_constraint", message: "BEAM form exceeds the 64-chunk budget." });
+    const go = JSON.stringify({ code: "invalid_request", category: "invalid_input", message: "Analysis input is invalid." });
+    expect(isReaCapacityError(1, beam, "")).toBe(true);
+    expect(isReaCapacityError(1, go, "")).toBe(false);
+    expect(isReaCapacityError(0, beam, "")).toBe(false);
+  });
+
+  test("the Go balanced framing error is a capacity error in REA's details.issues or in the message; other invalid_request is not", () => {
+    const real = JSON.stringify({ code: "invalid_request", category: "invalid_input", message: "Analysis input is invalid. Check the arguments and try again.", details: { operation: "inspect_go_binary", issues: [{ path: ["path"], reason: "invalid_format", message: "Selected artifact /x/go.elf: Go module string framing is invalid" }] } });
+    const bare = JSON.stringify({ code: "invalid_request", message: "Go module string framing is invalid" });
+    const other = JSON.stringify({ code: "invalid_request", message: "Analysis input is invalid.", details: { issues: [{ message: "path is required" }] } });
+    expect(isReaCapacityError(1, real, "")).toBe(true);
+    expect(isReaCapacityError(1, bare, "")).toBe(true);
+    expect(isReaCapacityError(1, other, "")).toBe(false);
+    expect(isReaCapacityError(0, real, "")).toBe(false);
   });
 
   test("one retry on a different input; never the same input; never a second retry", () => {
@@ -96,6 +114,15 @@ describe("run wrapper", () => {
       expect(readFileSync(join(r.prepared), "utf8")).not.toContain("shadow");
     });
 
+    test("the Go framing envelope on the first copy counts as a cap: one retry on the pruned copy", () => {
+      const env = JSON.stringify({ code: "invalid_request", message: "Analysis input is invalid.", details: { issues: [{ message: "Selected artifact x: Go module string framing is invalid" }] } });
+      const flag = join(tmp, "once-go");
+      const r = run(decoy, { work: join(tmp, "w11go"), rea: `if [ -e ${flag} ]; then exit 0; fi; touch ${flag}; echo '${env}'; exit 1` });
+      expect(r.verdict).toBe("ok");
+      expect(r.attempts).toHaveLength(2);
+      expect(r.prepared).toContain("b-quarantine");
+    });
+
     test("a capacity error on both copies is reported after the retry", () => {
       const r = run(decoy, { work: join(tmp, "w12"), rea: "echo 'budget exceeded' >&2; exit 1" });
       expect(r.verdict).toBe("capacity-error-after-retry");
@@ -108,6 +135,13 @@ describe("run wrapper", () => {
       expect(r.reason).toContain("same bytes");
       expect(r.attempts).toHaveLength(1);
     });
+  });
+
+  test("a recognized Go balanced build reaches REA already cleaned: a REA that rejects the BLA plant passes on the first attempt", () => {
+    const rea = "if grep -q BLA-GO-MAPPED {target}; then echo '{\"code\":\"invalid_request\",\"message\":\"Go module string framing is invalid\"}'; exit 1; fi";
+    const r = run(join(FIXTURES, "go.bla.elf"), { work: join(tmp, "w5go"), rea });
+    expect(r.verdict).toBe("ok");
+    expect(r.attempts.map((a) => a.exitCode)).toEqual([0]);
   });
 
   test("a capacity error on an ASAR target ends in a report, not a crash", () => {
@@ -124,7 +158,7 @@ describe("run wrapper", () => {
     writeFileSync(asar, floodAsar(150));
     const r = run(asar, { work: join(tmp, "w6a"), coverage: true });
     expect(r.verdict).toBe("cleaned");
-    expect(r.notes).toEqual(["coverage skipped: an ASAR is not executable by node"]);
+    expect(r.notes).toEqual(["coverage skipped: node runs plain JS and coverage.py runs Python source only, not an ASAR, a lone .pyc, WASM, BEAM or a native binary"]);
   });
 
   test("a second run in the same work dir does not keep files of the first", () => {

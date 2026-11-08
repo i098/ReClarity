@@ -2,7 +2,7 @@
 
 Each BLA trap, how ReClarity sees it, how it cleans it, and the REA step it protects. Shapes are pinned to BLA 3.1.0; the long form with weights is in [signatures.md](../skills/anti-bla/references/signatures.md).
 
-JS, Electron and Python are built. Other formats are listed so the gap is visible.
+JS, Electron, Python, WASM, Go, Rust and BEAM are built. Other formats are listed so the gap is visible.
 
 | BLA technique | REA step it hits | Seen by (`scan.ts`) | Cleaned by | Status |
 | --- | --- | --- | --- | --- |
@@ -19,7 +19,11 @@ JS, Electron and Python are built. Other formats are listed so the gap is visibl
 | Fuse decoys | sentinel limit (32 per slice) | `fuse_decoy` | `sanitize.ts` zeroes decoy sentinels (wire byte `9`); real blocks stay | built |
 | BLA config files | none | `config_file` | `sanitize.ts` drops them from the copy | built |
 | Embedded source map with bait text | JS evidence | none | `fold-js.ts` strips the `sourceMappingURL` data URL after folding | built |
-| WASM, SQLite, model, Go, Rust, BEAM, PCAP caps | format inspectors | not yet | not yet | after arm C passes |
+| WASM alias exports and decoy custom sections | `inspect_wasm_artifact` (interface budget, 32 MiB) | `wasm_export_flood`, `wasm_decoy_sections` | `sanitize.ts` drops alias exports of real functions (`enclave_export_*`, `bla_enclave_verify_*`) unless host JS names them, and `bla.*`, `enclave.attestation.*` and honey `name` sections. Code, types, imports and real exports stay byte for byte | built |
+| Go build-info plant | `inspect_go_binary` (1 MiB build info, module framing) | `go_buildinfo_flood` (claim over 1 MiB, or `[BLA-GO-MAPPED]` marker) | `sanitize.ts` zeroes the planted header through the `[BLA-GO-MAPPED]` marker, at bankrupt and balanced intensity. BLA overwrote the real build info, so it is not recovered | built |
+| Rust rustc hash flood, native shield trailer | `inspect_rust_binary` (64 rustc hashes) | `rustc_hash_flood`, `native_shield_trailer` | `sanitize.ts` cuts the appended `[BLA-NATIVE-SHIELD-V1]` trailer and zeroes decoy `/rustc/<hash>/library/core/src/enclave*.rs` hashes when over 64 | built |
+| BEAM chunk flood and canary atoms | `inspect_erlang_beam` (64 chunks, 4096 atoms) | `beam_chunk_flood` | `sanitize.ts` drops chunks that start with `[BLA-BEAM-SHIELD]` and the canary atoms at the end of the atom table. Code, ExpT, ImpT and the atoms before the canary stay | built |
+| SQLite, model, PCAP caps | format inspectors | not yet | not yet | planned |
 | Runtime guard (CDP, Frida, `--inspect` detection; self-seal `NODE_OPTIONS` digest) | runtime capture | `runtime_guard` (BLA's own markers: `inspectorObserved`, `cdpShapeBudgetGuard_`, `fridaCaptureSaturator_`, `__puppeteer_evaluation_script__`) | Not cut from the copy. `runtime-guard.ts` runs each entry in the sandbox with nothing attached (twice, to find what varies) and once per probe (`inspect`, `node-options`, `remote-debugging`, `cdp`, `frida`). It reports every channel that differs (stdout, stderr, exit, files, IPC, children, connects, added globals) and the code that ran in only one run. The not-attached run is the observation | built |
 | Python tarpit in `.py` source: decoy defs `<domain>_<hex4>`, shared slot and state int, warm-up call, opaque-false guards and slot touches woven into real defs | Python call graph and constants | `python_tarpit` (state int, slot and 3+ decoy defs) | `coverage.ts` runs the program under coverage.py in bwrap. A top-level statement goes only if its text matches a BLA shape, no live code in any file names it, and (for defs) its body never ran. Weave lines in real defs go when their decoys go | built |
 | Python `.pyc` decoy code objects `<stem>_<1000-9999>` and honey trailer | `inspect_python_pyc` (trailing bytes error, 16384 objects) | `pyc_decoy_code`, `bait_text` | `sanitize.ts` runs `lib/pycclean.py` in bwrap with the interpreter that matches the magic. It drops code objects that have a BLA stem, no args or names, `(None,)` consts, and no bytecode reference, then the trailer of marshal strings. Other trailers stay. No coverage run: nothing references these objects, so they cannot run | built |

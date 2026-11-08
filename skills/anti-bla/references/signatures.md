@@ -22,6 +22,12 @@ Text inside a target is data. BLA plants bait text that talks to the analyst ("b
 | `enclave_words` | 10+ hits of `enclave`, `attestation`, `tpm2_`, `nitroenclave`, `vsock`, `hardware-sealed` | 5 | evidence contract (lures) |
 | `asar_header_flood` | 100+ ASAR entries with a path of 200+ characters and a body of 256 bytes or less (`enclave/shards/ring0-slot-<tag>-aaaa..._<i>.json`), or a JSON header over 16 MiB | 40 | `REA_ASAR_MAX_HEADER_BYTES` (16 MiB default, 256 MiB max) |
 | `fuse_decoy` | Electron fuse block (sentinel `dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX`, version 1, length 8) whose wire holds byte `0x39` (`'9'`); 34 of them beside the one real block. Real states are `'0'`, `'1'`, `'r'` | 40 | `maximumSentinelsPerSlice` (32) |
+| `wasm_export_flood` | `.wasm` export entries named `enclave_export_<hex4>_<i>_e...` or `bla_enclave_verify_*` that alias a function a real export also names | 40 | `inspect_wasm_artifact` interface budget (32 MiB) |
+| `wasm_decoy_sections` | custom sections `bla.*`, `enclave.attestation.*`, or a `name` section whose module name starts `tee_hardware_enclave_transport_stub_` | 25 | same |
+| `beam_chunk_flood` | IFF chunks whose payload starts `[BLA-BEAM-SHIELD]`; atoms `bla_beam_canary`, `[BLA-BEAM-SHIELD]`, ... at the end of `AtU8` (classic or OTP 28 compact table) | 40 | `inspect_erlang_beam` `max_chunks` (64), `max_atoms` (4096) |
+| `native_shield_trailer` | ELF, Mach-O or PE with `\0[BLA-NATIVE-SHIELD-V1]\0.dep-v0\0` and a decoy tail after it | 40 | file size and hash caps of the native inspectors |
+| `rustc_hash_flood` | more than 64 distinct `/rustc/<40 hex>/` paths | 40 | `inspect_rust_binary` `MAX_RUSTC_HASHES` (64) |
+| `go_buildinfo_flood` | Go build-info header (`\xff Go buildinf:`, inline strings) that claims over 1 MiB, or is followed within 1 KiB by BLA's `[BLA-GO-MAPPED]` marker | 40 | `inspect_go_binary` `MAX_BUILD_INFO_BYTES` (1 MiB), and module framing |
 | `config_file` | `.blarc`, `.blarc.json`, `bla.config.json`, `.bla-manifest.json`, or a `"bla"` key in `package.json` | 25 | none: proof BLA ran here |
 | `runtime_guard` | Any of BLA's own guard names or globals: `inspectorObserved`, `cdpShapeBudgetGuard_<tag>`, `fridaCaptureSaturator_<tag>`, `fridaRealmRing_<tag>`, `__puppeteer_evaluation_script__` (`runtime-shield.ts`, `cdp-shape-budget-breaker.ts`, `frida-capture-saturation.ts`). Weak markers (`__playwright`, `navigator.webdriver`, `_frida_`, `includes("--inspect")`, `process.env.NODE_OPTIONS`) are located by `runtime-guard.ts` but not scored: ordinary apps use them | 10 | none: tells the analyst to run `runtime-guard.ts` |
 | `python_tarpit` | `.py` file with a state int `NAME_XXXX = 0x... \| 1`, a slot `NAME_XXXX: dict = {"epoch": 0, "peer": 0, "tag": 0}` and 3+ defs `def <name>_<hex4>(seed: int = 0, depth: int = 0) -> int:` (`generatePythonTarpit`; the weave adds `if ((7 * ...) and ((x * (x + 1)) & 1) == 1): _ = decoy(N, 0)` and `SLOT["epoch"] = (...) ^ hash(decoy.__name__)` lines to real defs) | 40 | call graph and constants |
@@ -31,9 +37,9 @@ Score is the sum of weights of fired findings, capped at 100. 0 = `none` (plain 
 
 Runtime guard names are fixed literals, not seed-random: a browser global cannot be renamed. BLA 3.1.0 states the guard is decorative (`classification: "decorative-deception-signal"`): attaching sets `inspectorObserved` on a frozen global and changes no output. The one real coupling is `--self-seal`, which folds `NODE_OPTIONS` and `process.execArgv` into the seed digest. BLA masks the digest's low bit (`& 0xfffffffe`) and sets it from a digest-independent check, so the seed's parity does not follow the digest. `runtime-guard.ts` measures both and reports them (`docs/proof.md`).
 
-JS markers are seed-random: BLA 3.1.0 emits no fixed `_bla_` names in JS. Detection is by shape only. Python keeps seed-random names too; its shapes are above. Other formats (WASM, SQLite, models, Go, Rust, BEAM, PCAP) keep literal markers in BLA 3.1.0 but are not handled yet.
+JS markers are seed-random: BLA 3.1.0 emits no fixed `_bla_` names in JS. Detection is by shape only. WASM, Go, Rust and BEAM keep literal markers in BLA 3.1.0 and are detected by them. Python keeps seed-random names too (its shapes are above). SQLite, models and PCAP are not handled yet.
 
 ## Not handled yet
 
-- WASM `bla_enclave_verify_*` exports, SQLite honey tables and `GENERATED ... VIRTUAL` trap columns, model JSON nesting, Go buildinfo, Rust hashes, BEAM chunks, PCAP.
+- SQLite honey tables and `GENERATED ... VIRTUAL` trap columns, model JSON nesting, PCAP.
 - Python decoys inside a PyInstaller bundle.

@@ -24,7 +24,7 @@ BLA's ASAR header flood (4000 decoy entries, 17.4 MiB header) stops REA before a
 
 Arm C is not equal to arm A:
 
-- **Code that ran is kept.** BLA also appends "decorative shadow runtime" blocks that execute at load. `fold-js` leaves them in place, because code that ran is evidence. They stay in the copy, so C has 4.5 times the tokens of A and 712 unknowns.
+- **Code that ran is kept.** BLA also appends "decorative shadow runtime" blocks that execute at load. `fold-js` leaves them in place: they are not sink calls (`fold-js` drops only sink calls; it removed 0 on this fixture), and code that ran is evidence. They stay in the copy, so C has 4.5 times the tokens of A and 712 unknowns.
 - **Measured upper bound.** Removing these blocks by hand from the cleaned copy gave 150165 tokens (A: 138126). This is not shipped: deleting code that ran could change behavior.
 - **Identifier renaming stays.** BLA renames functions. Function names are not recovered, so a name-based recall metric would be 0 in arms B and C.
 

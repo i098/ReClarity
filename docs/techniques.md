@@ -29,4 +29,4 @@ A clean copy keeps everything it cannot prove dead:
 
 - Code that only runs on rare input is "not run". It is kept.
 - Not-run code that carries trap words but that kept code still names is kept.
-- Code that ran is kept, bait words or not. It is marked `bait_ran`, so it never counts as an Observation.
+- Code that ran is kept, bait words or not. It is marked `bait_ran`, so it never counts as an Observation. The one exception is a sink call that `fold-js.ts` proves has no effect (see the table); on the real BLA fixture none qualifies.

@@ -54,7 +54,6 @@ export interface CoverageReport {
   notes: string[];
 }
 
-export const TRAP = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST|delegatedToEnclave|fallbackStub|hardware-sealed|attestation/i;
 export const SANDBOX_DIR = "/app";
 
 /** bwrap prefix every sandboxed run shares: no network, read-only system and node tree, no env. */

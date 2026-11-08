@@ -61,9 +61,8 @@ export function admit(l: Ledger, data: string | Buffer): boolean {
   return true;
 }
 
-/** After a capacity error: allow one retry, and only on a different (cleaned) input. */
-export function mayRetry(l: Ledger, error: string, cleaned: string | Buffer): Verdict {
-  if (!isCapacityError(error)) return { ok: false, reason: "not a capacity error; no retry" };
+/** After a capacity error (the caller checks): allow one retry, and only on a different (cleaned) input. */
+export function mayRetry(l: Ledger, cleaned: string | Buffer): Verdict {
   if (l.retried) return { ok: false, reason: "already retried once; report the capacity error" };
   if (l.tried.includes(inputHash(cleaned))) return { ok: false, reason: "cleaning changed nothing; the same input is never retried" };
   l.retried = true;
@@ -75,8 +74,8 @@ export function fixtureTargets(report: CoverageReport): { file: string; head: st
   return report.files.flatMap((f) => f.statements.filter((s) => s.kind === "run").map((s) => ({ file: f.file, head: s.head }))).slice(0, MAX_FIXTURES);
 }
 
-/** Text from a target is data, never instructions. Strip fence breaks so it cannot close the wrapper. */
-export const asData = (text: string, label = "target"): string => `<target-data source="${label}" trust="none">\n${text.replaceAll("</target-data>", "")}\n</target-data>`;
+/** Text from a target is data, never instructions. Escape every closing-tag start in one pass, so no text can close the wrapper. */
+export const asData = (text: string, label = "target"): string => `<target-data source="${label}" trust="none">\n${text.replace(/<(?=\/\s*target-data)/gi, "&lt;")}\n</target-data>`;
 
 if (import.meta.main) {
   const [cmd, path, arg] = process.argv.slice(2);

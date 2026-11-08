@@ -2,9 +2,9 @@
 // Wrapper for one target: scan first, clean a copy when BLA shapes show, run REA under the caps.
 // A REA capacity error gets ONE retry, and only on a differently cleaned copy. The original is never written.
 //   bun run.ts <target> --work <dir> [--rea "rea ... {target}"] [--coverage]
-import { cpSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { coverage, quarantineCopy } from "./coverage.ts";
+import { coverage, hasSandbox, quarantineCopy } from "./coverage.ts";
 import { foldPath } from "./fold-js.ts";
 import { admit, asData, check, inputHash, isCapacityError, loadLedger, mayRetry, saveLedger, type Ledger } from "./guard.ts";
 import { sanitize } from "./sanitize.ts";
@@ -46,7 +46,6 @@ export function prepare(target: string, work: string, tag: string, withCoverage:
   foldPath(sanitized, folded);
   if (!withCoverage) return folded;
   const quarantined = join(work, `${tag}-quarantine`);
-  if (isDir) cpSync(folded, quarantined, { recursive: true }); // non-JS files ride along; covered JS is overwritten
   quarantineCopy(folded, coverage(folded), quarantined);
   return isDir ? quarantined : join(quarantined, basename(target));
 }
@@ -75,8 +74,8 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
     rep.attempts.push(a);
     if (a.capacityError) {
       // clean again from the original, with the other settings; the same bytes are refused
-      const second = prepare(target, opts.work, "b", true);
-      const v = mayRetry(ledger, a.output, treeHash(second));
+      const second = prepare(target, opts.work, "b", hasSandbox());
+      const v = mayRetry(ledger, treeHash(second));
       if (v.ok && check(ledger).ok) {
         admit(ledger, treeHash(second));
         a = runRea(opts.rea, second, ledger);

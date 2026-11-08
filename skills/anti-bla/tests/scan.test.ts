@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BLA_VERSION, scan, type ScanReport } from "../scripts/scan.ts";
+import { scan, type ScanReport } from "../scripts/scan.ts";
 import { FIXTURES, floodAsar, fuseBinary } from "./fixtures/make.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "antibla-scan-"));
@@ -67,9 +67,19 @@ describe("scan", () => {
     expect(ids(scan(d))).toContain("config_file");
   });
 
-  test("signatures.md is pinned to the version the scan was written for", () => {
-    const md = readFileSync(join(import.meta.dir, "../references/signatures.md"), "utf8");
-    expect(md).toContain(`BLA ${BLA_VERSION}`);
-    expect(scan(join(FIXTURES, "main.bla.js")).signaturesPinnedTo).toBe(BLA_VERSION);
+  test("a truncated ASAR is a note, not a crash", () => {
+    const f = join(tmp, "cut.asar");
+    writeFileSync(f, floodAsar(150).subarray(0, 40));
+    const r = scan(f);
+    expect(r.score).toBe(0);
+    expect(r.notes.join("\n")).toContain("cut.asar");
+  });
+
+  test("evidence lists the files that hit, not the files scanned first", () => {
+    const d = join(tmp, "where");
+    mkdirSync(d);
+    for (let i = 0; i < 6; i++) writeFileSync(join(d, `a${i}.js`), "module.exports = 1;\n");
+    writeFileSync(join(d, "z.js"), "// ENCLAVE-ATTESTATION-GUARD\nmodule.exports = 2;\n");
+    expect(scan(d).findings.find((f) => f.id === "bait_text")!.where).toEqual([join(d, "z.js")]);
   });
 });

@@ -1,5 +1,5 @@
 // Minimal ASAR reader and writer (Chromium pickle header, JSON file tree).
-import { closeSync, openSync, readSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 
 export interface AsarNode {
   files?: Record<string, AsarNode>;
@@ -18,6 +18,7 @@ export interface Asar {
   files: AsarFile[];
   read(file: AsarFile): Buffer;
 }
+export type OpenAsar = Asar & { close(): void };
 
 function collect(dir: AsarNode, prefix: string, out: AsarFile[]): void {
   for (const [name, node] of Object.entries(dir.files ?? {})) {
@@ -27,30 +28,37 @@ function collect(dir: AsarNode, prefix: string, out: AsarFile[]): void {
   }
 }
 
-export function openAsar(path: string): Asar & { close(): void } {
+export function openAsar(path: string): OpenAsar {
   const fd = openSync(path, "r");
-  const head = Buffer.alloc(16);
-  if (readSync(fd, head, 0, 16, 0) < 16 || head.readUInt32LE(0) !== 4) {
+  try {
+    const head = Buffer.alloc(16);
+    if (readSync(fd, head, 0, 16, 0) < 16 || head.readUInt32LE(0) !== 4) throw new Error(`not an ASAR archive: ${path}`);
+    const base = 8 + head.readUInt32LE(4);
+    const jsonLen = head.readUInt32LE(12);
+    const fileSize = fstatSync(fd).size;
+    if (16 + jsonLen > fileSize) throw new Error(`malformed ASAR header (claims ${jsonLen} B, file is smaller): ${path}`);
+    const json = Buffer.alloc(jsonLen);
+    if (readSync(fd, json, 0, jsonLen, 16) < jsonLen) throw new Error(`truncated ASAR header: ${path}`);
+    const files: AsarFile[] = [];
+    collect(JSON.parse(json.toString("utf8")) as AsarNode, "", files);
+    return {
+      headerBytes: jsonLen,
+      files,
+      read(f) {
+        if (f.node.unpacked || f.node.size === undefined) return Buffer.alloc(0);
+        const { size } = f.node;
+        const at = base + Number(f.node.offset);
+        if (!Number.isSafeInteger(size) || size < 0 || !(at >= base) || at + size > fileSize) throw new Error(`malformed ASAR entry (offset ${f.node.offset}, size ${size}): ${path}`);
+        const buf = Buffer.alloc(size);
+        if (readSync(fd, buf, 0, size, at) < size) throw new Error(`truncated ASAR entry: ${path}`);
+        return buf;
+      },
+      close: () => closeSync(fd),
+    };
+  } catch (e) {
     closeSync(fd);
-    throw new Error(`not an ASAR archive: ${path}`);
+    throw e;
   }
-  const base = 8 + head.readUInt32LE(4);
-  const jsonLen = head.readUInt32LE(12);
-  const json = Buffer.alloc(jsonLen);
-  readSync(fd, json, 0, jsonLen, 16);
-  const files: AsarFile[] = [];
-  collect(JSON.parse(json.toString("utf8")) as AsarNode, "", files);
-  return {
-    headerBytes: jsonLen,
-    files,
-    read(f) {
-      if (f.node.unpacked || f.node.size === undefined) return Buffer.alloc(0);
-      const buf = Buffer.alloc(f.node.size);
-      readSync(fd, buf, 0, buf.length, base + Number(f.node.offset));
-      return buf;
-    },
-    close: () => closeSync(fd),
-  };
 }
 
 /** Build an archive. Files with `data` are packed; others keep their node (unpacked or link). */

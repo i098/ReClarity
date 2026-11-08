@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foldJs, foldPath } from "../scripts/fold-js.ts";
+import { buildAsar } from "../scripts/lib/asar.ts";
 import { scan } from "../scripts/scan.ts";
 import { readFixture } from "./fixtures/make.ts";
 
@@ -70,4 +71,20 @@ test("foldPath writes a copy and leaves the original", () => {
   const rep = foldPath(src, join(tmp, "out.js"));
   expect(readFileSync(src).equals(original)).toBe(true);
   expect(rep.files[0]!.stats.predicatesFolded).toBeGreaterThan(0);
+});
+
+test("foldPath copies node_modules unchanged", () => {
+  const src = join(tmp, "app");
+  mkdirSync(join(src, "node_modules", "dep"), { recursive: true });
+  writeFileSync(join(src, "main.js"), "module.exports = 1;\n");
+  writeFileSync(join(src, "node_modules", "dep", "index.js"), readFixture("main.bla.js"));
+  foldPath(src, join(tmp, "app-out"));
+  expect(readFileSync(join(tmp, "app-out", "node_modules", "dep", "index.js")).equals(readFixture("main.bla.js"))).toBe(true);
+});
+
+test("foldPath copies an ASAR with a bad entry unchanged instead of aborting", () => {
+  const src = join(tmp, "bad.asar");
+  writeFileSync(src, buildAsar([{ path: "a.js", node: { size: 2 ** 40, offset: "0" } }]));
+  foldPath(src, join(tmp, "bad-out.asar"));
+  expect(readFileSync(join(tmp, "bad-out.asar")).equals(readFileSync(src))).toBe(true);
 });

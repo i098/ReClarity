@@ -7,7 +7,7 @@
 //   bait that ran carries trap words but executed: listed, never an Observation, kept.
 // Target code is untrusted: it runs only inside bwrap on this host (no network, no home,
 // no secrets in env, read-only root, time limit). Without bwrap the tool refuses.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseJs, type AnyNode } from "./lib/js.ts";
@@ -68,8 +68,10 @@ function mainOf(dir: string): string {
   return typeof main === "string" ? main : "index.js";
 }
 
+export const hasSandbox = (): boolean => !!Bun.which("bwrap");
+
 function runCovered(target: string, opts: RunOptions = {}): RunResult {
-  if (!Bun.which("bwrap")) throw new Error("refusing to run target code: bwrap not found (sandbox required, this host only)");
+  if (!hasSandbox()) throw new Error("refusing to run target code: bwrap not found (sandbox required, this host only)");
   const abs = resolve(target);
   const isDir = statSync(abs).isDirectory();
   const app = isDir ? abs : dirname(abs);
@@ -175,12 +177,14 @@ export function coverage(target: string, opts: RunOptions = {}): CoverageReport 
   }
 }
 
-/** Write a copy of `target` without decoy-suspect statements; they go whole into quarantine.json. */
+/** Copy `target` to `out`, minus decoy-suspect statements; they go whole into quarantine.json (written only when there are any). */
 export function quarantineCopy(target: string, report: CoverageReport, out: string): { removed: number } {
   const abs = resolve(target);
-  const root = statSync(abs).isDirectory() ? abs : dirname(abs);
+  const isDir = statSync(abs).isDirectory();
+  const root = isDir ? abs : dirname(abs);
   const quarantine: { file: string; start: number; text: string }[] = [];
   mkdirSync(out, { recursive: true });
+  cpSync(abs, isDir ? out : join(out, basename(abs)), { recursive: true }); // files without coverage ride along; covered JS is rewritten below
   for (const f of report.files) {
     let src = readFileSync(join(root, f.file), "utf8");
     for (const s of f.statements.filter((x) => x.kind === "decoy_suspect").sort((a, b) => b.start - a.start)) {
@@ -190,7 +194,7 @@ export function quarantineCopy(target: string, report: CoverageReport, out: stri
     mkdirSync(dirname(join(out, f.file)), { recursive: true });
     writeFileSync(join(out, f.file), src);
   }
-  writeFileSync(join(out, "quarantine.json"), JSON.stringify(quarantine, null, 2));
+  if (quarantine.length) writeFileSync(join(out, "quarantine.json"), JSON.stringify(quarantine, null, 2));
   return { removed: quarantine.length };
 }
 

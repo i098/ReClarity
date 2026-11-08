@@ -4,7 +4,7 @@
 // here: logic that only looks like a decoy is handled by coverage.ts ("not run").
 import { copyFileSync, closeSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
-import { buildAsar, openAsar } from "./lib/asar.ts";
+import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
 import { SENTINEL, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
 import { CONFIG_NAMES, FLOOD_MIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
 
@@ -29,11 +29,12 @@ const REA_ASAR_MAX = 256 * MIB;
 const SUSPECT = /(^|\/)(enclave|tee|attestation)[^/]*/i;
 
 function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
-  const asar = openAsar(src);
+  let asar: OpenAsar | undefined;
   try {
-    const flood = asar.files.filter(isFloodEntry);
-    if (asar.headerBytes > REA_ASAR_DEFAULT_HEADER) {
-      const need = Math.ceil(asar.headerBytes / MIB) * MIB;
+    const open = (asar = openAsar(src));
+    const flood = open.files.filter(isFloodEntry);
+    if (open.headerBytes > REA_ASAR_DEFAULT_HEADER) {
+      const need = Math.ceil(open.headerBytes / MIB) * MIB;
       if (need <= REA_ASAR_MAX) r.reaEnv.REA_ASAR_MAX_HEADER_BYTES = String(need);
     }
     if (flood.length < FLOOD_MIN) {
@@ -42,13 +43,16 @@ function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
       return;
     }
     const drop = new Set(flood);
-    const kept = asar.files.filter((f) => !drop.has(f));
-    const packed = buildAsar(kept.map((f) => ({ path: f.path, node: f.node, data: f.node.unpacked || f.node.link !== undefined ? undefined : asar.read(f) })));
+    const kept = open.files.filter((f) => !drop.has(f));
+    const packed = buildAsar(kept.map((f) => ({ path: f.path, node: f.node, data: f.node.unpacked || f.node.link !== undefined ? undefined : open.read(f) })));
     writeFileSync(dst, packed);
-    r.actions.push({ kind: "asar-flood-dropped", path: src, detail: `${flood.length} entries dropped, header ${asar.headerBytes} B -> ${packed.readUInt32LE(12)} B` });
+    r.actions.push({ kind: "asar-flood-dropped", path: src, detail: `${flood.length} entries dropped, header ${open.headerBytes} B -> ${packed.readUInt32LE(12)} B` });
     for (const f of kept) if (SUSPECT.test(f.path) && !r.suspects.includes(f.path)) r.suspects.push(f.path);
+  } catch (e) {
+    copyFileSync(src, dst);
+    r.actions.push({ kind: "copied-asar-unchanged", path: src, detail: e instanceof Error ? e.message : String(e) });
   } finally {
-    asar.close();
+    asar?.close();
   }
 }
 

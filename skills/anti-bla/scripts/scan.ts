@@ -56,6 +56,7 @@ class Acc {
   map = new Map<string, Finding>();
   notes: string[] = [];
   add(id: string, where: string, n = 1): void {
+    if (n <= 0) return;
     const f = this.map.get(id) ?? { id, count: 0, where: [] };
     f.count += n;
     if (f.where.length < 5 && !f.where.includes(where)) f.where.push(where);
@@ -200,8 +201,13 @@ function scanFile(path: string, size: number, acc: Acc): void {
     try {
       if ("bla" in JSON.parse(readFileSync(path, "utf8"))) acc.add("config_file", `${path} ("bla" key)`);
     } catch {}
-  } else if (ext === ".asar") scanAsar(path, acc);
-  else if ([".js", ".cjs", ".mjs"].includes(ext)) {
+  } else if (ext === ".asar") {
+    try {
+      scanAsar(path, acc);
+    } catch (e) {
+      acc.notes.push(`${path}: not scanned, ${e instanceof Error ? e.message : String(e)}`);
+    }
+  } else if ([".js", ".cjs", ".mjs"].includes(ext)) {
     if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
     else scanJs(readFileSync(path, "utf8"), path, acc);
   } else if (size >= 1 << 20 && isNativeExecutable(path)) {
@@ -227,7 +233,7 @@ export function scan(target: string): ScanReport {
   };
   visit(target);
   if (seen >= MAX_FILES) acc.notes.push(`stopped after ${MAX_FILES} files`);
-  const findings = [...acc.map.values()].filter((f) => f.count >= (RULES[f.id]?.min ?? 1) && f.count > 0);
+  const findings = [...acc.map.values()].filter((f) => f.count >= (RULES[f.id]?.min ?? 1));
   const score = Math.min(100, findings.reduce((s, f) => s + (RULES[f.id]?.weight ?? 0), 0));
   return {
     tool: "anti-bla/scan",

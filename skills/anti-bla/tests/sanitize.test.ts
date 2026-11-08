@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openAsar } from "../scripts/lib/asar.ts";
+import { buildAsar, openAsar } from "../scripts/lib/asar.ts";
 import { findSentinels } from "../scripts/lib/fuses.ts";
 import { sanitize } from "../scripts/sanitize.ts";
 import { scan } from "../scripts/scan.ts";
@@ -64,5 +64,21 @@ describe("sanitize", () => {
     const d = join(tmp, "proj");
     expect(() => sanitize(d, join(d, "inner"))).toThrow(/refusing/);
     expect(() => sanitize(d, d)).toThrow(/refusing/);
+  });
+
+  test("an unreadable ASAR is copied unchanged, not a crash", () => {
+    const src = join(tmp, "cut.asar");
+    writeFileSync(src, floodAsar(150).subarray(0, 40));
+    const r = sanitize(src, join(tmp, "out6"));
+    expect(sha(join(tmp, "out6", "cut.asar"))).toBe(sha(src));
+    expect(r.actions[0]!.kind).toBe("copied-asar-unchanged");
+  });
+
+  test("an entry that claims more bytes than the archive holds is refused, not allocated", () => {
+    const f = join(tmp, "huge.asar");
+    writeFileSync(f, buildAsar([{ path: "a.js", node: { size: 2 ** 40, offset: "0" } }]));
+    const a = openAsar(f);
+    expect(() => a.read(a.files[0]!)).toThrow(/malformed ASAR entry/);
+    a.close();
   });
 });

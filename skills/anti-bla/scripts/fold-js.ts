@@ -3,9 +3,9 @@
 // Pass 1 folds `if`/`?:`/expressions that give one answer for every seed value.
 // Pass 2 removes top-level declarations no live code reaches (decoy clusters, keep-alive arrays).
 // It never decides from names or text: only from folded predicates and reachability.
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
-import { buildAsar, openAsar } from "./lib/asar.ts";
+import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
 import { findSeeds, kids, opaqueValue, parseJs, type AnyNode, type Seed, type SeedFlag } from "./lib/js.ts";
 import { pruneJs } from "./lib/prune.ts";
 
@@ -86,25 +86,33 @@ export interface FoldReport {
 function foldTree(src: string, dst: string, flag: SeedFlag, rep: FoldReport): void {
   if (statSync(src).isDirectory()) {
     mkdirSync(dst, { recursive: true });
-    for (const e of readdirSync(src)) if (e !== "node_modules") foldTree(join(src, e), join(dst, e), flag, rep);
+    for (const e of readdirSync(src)) {
+      if (e === "node_modules") cpSync(join(src, e), join(dst, e), { recursive: true });
+      else foldTree(join(src, e), join(dst, e), flag, rep);
+    }
     return;
   }
   mkdirSync(dirname(dst), { recursive: true });
   if (extname(src) === ".asar") {
-    const asar = openAsar(src);
+    let asar: OpenAsar | undefined;
+    const folded: FoldReport["files"] = [];
     try {
+      asar = openAsar(src);
       const entries = asar.files.map((f) => {
-        const data = f.node.unpacked || f.node.link !== undefined ? undefined : asar.read(f);
+        const data = f.node.unpacked || f.node.link !== undefined ? undefined : asar!.read(f);
         if (!data || !isJs(f.path) || f.path.includes("node_modules/")) return { path: f.path, node: f.node, data };
         const r = foldJs(data.toString("utf8"), flag);
         if (!r.stats.predicatesFolded && !r.stats.branchesDropped) return { path: f.path, node: f.node, data };
-        rep.files.push({ path: `${src}!${f.path}`, stats: r.stats });
+        folded.push({ path: `${src}!${f.path}`, stats: r.stats });
         const { integrity: _stale, ...node } = f.node as typeof f.node & { integrity?: unknown };
         return { path: f.path, node, data: Buffer.from(r.code) };
       });
       writeFileSync(dst, buildAsar(entries));
+      rep.files.push(...folded);
+    } catch {
+      copyFileSync(src, dst); // not a readable archive: nothing to fold
     } finally {
-      asar.close();
+      asar?.close();
     }
   } else if (isJs(src)) {
     const r = foldJs(readFileSync(src, "utf8"), flag);

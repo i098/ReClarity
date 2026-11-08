@@ -81,6 +81,16 @@ describe("fold-js keeps behavior it cannot prove unchanged", () => {
     expect(load(foldJs(reassigned).code).f!()).toBe("even");
   });
 
+  test("only a byte-masked `| 1` is a seed: a literal or unmasked left side keeps both arms", () => {
+    const flags = "const FLAGS = 0x1000 | 1;\nfunction f() { if (FLAGS === 4097) return 'A'; return 'B'; }\nmodule.exports = { f };\n";
+    expect(load(foldJs(flags).code).f!()).toBe("A");
+    const mode = "const MODE = (process.env.MODE_NUM | 0) | 1;\nfunction g() { return MODE !== 4097 ? 'other' : 'special'; }\nmodule.exports = { g };\n";
+    expect(foldJs(mode).code).toBe(mode);
+    const masked = "const S = (process.pid & 0xff) | 1;\nfunction h() { if ((S & 1) === 1) return 'odd'; return 'even'; }\nmodule.exports = { h };\n";
+    expect(load(foldJs(masked).code).h!()).toBe("odd");
+    expect(foldJs(masked).stats.branchesDropped).toBeGreaterThan(0);
+  });
+
   test("a classic script keeps its top-level declarations, which other scripts may call", () => {
     const code = `${seed}function onSave() { return 1; }\nfunction helper() { return 2; }\n`;
     const out = foldJs(code).code;

@@ -56,6 +56,15 @@ const isNum = (x: Node, v?: number): boolean => {
   return n.type === "Literal" && typeof n.value === "number" && (v === undefined || n.value === v);
 };
 
+const isByte = (x: AnyNode): boolean => x.type === "Literal" && typeof x.value === "number" && Number.isInteger(x.value) && x.value >= 0 && x.value <= 255;
+
+/** An expression that reads a program value and is masked to 0..255, so `| 1` holds only odd values the samples cover. */
+function byteMasked(x: AnyNode): boolean {
+  if (x.type === "BinaryExpression" && x.operator === "&") return (isByte(x.right) && x.left.type !== "Literal") || (isByte(x.left) && x.right.type !== "Literal");
+  if (x.type === "ConditionalExpression") return [x.consequent, x.alternate].every((b) => byteMasked(b) || isByte(b)) && [x.consequent, x.alternate].some(byteMasked);
+  return false;
+}
+
 function patternNames(p: AnyNode | null | undefined, out: string[]): void {
   if (!p) return;
   if (p.type === "Identifier") out.push(p.name);
@@ -86,7 +95,7 @@ export function reboundNames(program: Program): Set<string> {
 /**
  * Top-level `const` seed constants whose name is bound once in the file. Shapes seen in BLA 3.1.0:
  *   const S = 4098631152 | (digest(0) === K ? 1 : 0)    integrity-entangled
- *   const S = (process.pid & 0xff : 42) | 1             any odd value
+ *   const S = (cond ? process.pid & 0xff : 42) | 1      any odd value in 1..255
  * Unknown shapes, `let`/`var`, and names bound more than once return no seed, so nothing is folded for them.
  */
 export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
@@ -102,7 +111,7 @@ export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
         const lo = left.value | 0;
         const hi = lo | 1;
         seeds.push({ name: d.id.name, samples: flag === "either" ? [lo, hi] : [flag === 1 ? hi : lo] });
-      } else if (isNum(right, 1)) {
+      } else if (isNum(right, 1) && byteMasked(left)) {
         seeds.push({ name: d.id.name, samples: ODD_SAMPLES });
       }
     }

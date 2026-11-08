@@ -5,6 +5,14 @@
   "description": "Anti-BLA: keeps REA working on BLA-hardened builds",
   "type": "module",
   "scripts": {
-    "test": "bun test --pass-with-no-tests"
+    "test": "bun test",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "acorn": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2"
   }
 }

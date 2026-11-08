@@ -41,7 +41,3 @@ The `skills/anti-bla` skill is planned and not in this repo yet. When it lands, 
 | Python `.pyc` tarpit | `coverage.py` in the sandbox |
 
 Planned technique table and risks: [docs/index.md](docs/index.md).
-
-## Use
-
-Use ReClarity only on software you own or may analyze. Run target code only in the sandbox.

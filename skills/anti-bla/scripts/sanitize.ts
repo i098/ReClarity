@@ -149,6 +149,7 @@ function copyTree(src: string, dst: string, r: SanitizeReport): void {
   }
   mkdirSync(dirname(dst), { recursive: true });
   if (CONFIG_NAMES.includes(basename(src))) r.actions.push({ kind: "dropped-config", path: src });
+  else if (st.size >= MIB && isNativeExecutable(src)) sanitizeBinary(src, dst, r);
   else if (dataKind(src)) {
     try {
       sanitizeData(dataKind(src)!, src, dst, r);
@@ -158,7 +159,6 @@ function copyTree(src: string, dst: string, r: SanitizeReport): void {
     }
   }
   else if (extname(src) === ".asar") sanitizeAsar(src, dst, r);
-  else if (st.size >= MIB && isNativeExecutable(src)) sanitizeBinary(src, dst, r);
   else copyFileSync(src, dst);
 }
 

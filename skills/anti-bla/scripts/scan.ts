@@ -251,6 +251,14 @@ function scanFile(path: string, size: number, acc: Acc): void {
     try {
       if ("bla" in JSON.parse(readFileSync(path, "utf8"))) acc.add("config_file", `${path} ("bla" key)`);
     } catch {}
+  } else if (size >= 1 << 20 && isNativeExecutable(path)) {
+    // shortcut: reads the whole binary into memory; stream it if a 1 GB target ever shows up
+    const bin = readFileSync(path);
+    const s = findSentinels(bin);
+    const decoys = s.filter((x) => x.decoy).length;
+    if (decoys) acc.add("fuse_decoy", `${path}: ${decoys} decoys of ${s.length} sentinels (REA limit ${REA_MAX_SENTINELS})`, decoys);
+    const dart = findDartDecoys(bin);
+    if (dart.length) acc.add("dart_pool_decoy", `${path}: ${dart.length} Dart decoy blocks`, dart.length);
   } else if (dataKind(path)) {
     try {
       scanData(dataKind(path)!, path, size, acc);
@@ -266,14 +274,6 @@ function scanFile(path: string, size: number, acc: Acc): void {
   } else if ([".js", ".cjs", ".mjs"].includes(ext)) {
     if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
     else scanJs(readFileSync(path, "utf8"), path, acc);
-  } else if (size >= 1 << 20 && isNativeExecutable(path)) {
-    // shortcut: reads the whole binary into memory; stream it if a 1 GB target ever shows up
-    const bin = readFileSync(path);
-    const s = findSentinels(bin);
-    const decoys = s.filter((x) => x.decoy).length;
-    if (decoys) acc.add("fuse_decoy", `${path}: ${decoys} decoys of ${s.length} sentinels (REA limit ${REA_MAX_SENTINELS})`, decoys);
-    const dart = findDartDecoys(bin);
-    if (dart.length) acc.add("dart_pool_decoy", `${path}: ${dart.length} Dart decoy blocks`, dart.length);
   }
 }
 

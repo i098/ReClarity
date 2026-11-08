@@ -53,6 +53,13 @@ describe("sanitize", () => {
     expect(out.length).toBe(statSync(src).size);
   });
 
+  test("a native executable named .bin still gets its fuse decoys zeroed", () => {
+    const src = join(tmp, "tool.bin");
+    writeFileSync(src, fuseBinary(34));
+    sanitize(src, join(tmp, "out-bin"));
+    expect(findSentinels(readFileSync(join(tmp, "out-bin", "tool.bin")))).toHaveLength(1);
+  });
+
   test("directory: configs dropped, other files copied", () => {
     const d = join(tmp, "proj");
     mkdirSync(d);

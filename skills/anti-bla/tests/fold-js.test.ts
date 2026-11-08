@@ -24,8 +24,8 @@ describe("fold-js on real BLA 3.1.0 output", () => {
 
   test("folds seed predicates and cuts the decoy mass", () => {
     expect(r.stats.predicatesFolded).toBeGreaterThan(0);
-    expect(r.stats.sinkCallsRemoved).toBeGreaterThan(0);
-    expect(r.code.length).toBeLessThan(src.length / 10);
+    expect(r.stats.declarationsRemoved).toBeGreaterThan(0);
+    expect(r.code.length).toBeLessThan(src.length / 5);
     expect(r.code).not.toContain("sourceMappingURL");
   });
 
@@ -98,42 +98,37 @@ describe("fold-js keeps behavior it cannot prove unchanged", () => {
     expect(() => load(foldJs(code).code).f!("a")).toThrow();
   });
 
-  test("a call to a function with an unbounded or unprovable loop is kept, a bounded counter loop is dropped", () => {
+  test("a call to a function with any loop is kept", () => {
     const body = (inner: string) => `${seed}function work() { ${inner} }\nwork();\nmodule.exports = { f: () => 1 };\n`;
     expect(foldJs(body("for (;;) {}")).stats.sinkCallsRemoved).toBe(0);
     expect(foldJs(body("while (true) {}")).stats.sinkCallsRemoved).toBe(0);
-    expect(foldJs(body("for (let i = 0; i < 3; i++) { i = 0; }")).stats.sinkCallsRemoved).toBe(0);
-    expect(foldJs(body("for (let i = 0; i < 1e999; i++) {}")).stats.sinkCallsRemoved).toBe(0);
-    expect(foldJs(body("let k = 1; k = k + 1;")).stats.sinkCallsRemoved).toBe(1);
-    expect(foldJs(body("let k = 1; for (let i = 0; i < 8; i++) { k = k + i; }")).stats.sinkCallsRemoved).toBe(1);
+    expect(foldJs(body("for (let i = 0; i < 3; i++) { [i] = [0]; }")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("let k = 1; for (let i = 0; i < 8; i++) { k = k + i; }")).stats.sinkCallsRemoved).toBe(0);
   });
 
-  test("a call that reads or writes a member of private state that may be undefined is kept", () => {
-    const code = `${seed}let cache;\nfunction touch(k) { cache[k] = 1; }\nfunction f(x) { if (typeof x !== "number") { touch("a"); } return x; }\nmodule.exports = { f };\n`;
-    expect(() => load(foldJs(code).code).f!("a")).toThrow();
+  test("a loop whose bound a callee sink can grow is kept", () => {
+    const code = `${seed}const a = [1];\nfunction grow() { a.push(1); }\nfunction work() { for (let i = 0; i < a.length; i++) { grow(); } }\nwork();\nmodule.exports = { f: () => 1 };\n`;
+    expect(foldJs(code).stats.sinkCallsRemoved).toBe(0);
   });
 
-  test("a call to a member-writing function on private object state is still dropped", () => {
-    const code = `${seed}const cache = { n: 0 };\nfunction touch() { cache.n = cache.n + 1; }\ntouch();\nmodule.exports = { f: () => 1 };\n`;
-    expect(foldJs(code).stats.sinkCallsRemoved).toBe(1);
+  test("a call to a function that touches a member of private state or of a parameter is kept", () => {
+    const nested = `${seed}const cache = {};\nfunction touch() { cache.x.y = 1; }\nfunction f(x) { if (typeof x !== "number") { touch(); } return x; }\nmodule.exports = { f };\n`;
+    expect(() => load(foldJs(nested).code).f!("a")).toThrow(TypeError);
+    const param = `${seed}function w(o) { o.x = 1; }\nfunction f(x) { if (typeof x !== "number") { w(null); } return x; }\nmodule.exports = { f };\n`;
+    expect(() => load(foldJs(param).code).f!("a")).toThrow(TypeError);
+    const undef = `${seed}let cache;\nfunction touch(k) { cache[k] = 1; }\nfunction f(x) { if (typeof x !== "number") { touch("a"); } return x; }\nmodule.exports = { f };\n`;
+    expect(() => load(foldJs(undef).code).f!("a")).toThrow(TypeError);
   });
 
-  test("a loop bounded by an array length is kept when the body can grow or move the bound", () => {
-    const body = (inner: string, test = "i < a.length") => `${seed}function work() { const a = [1, 2]; for (let i = 0; ${test}; i++) { ${inner} } }\nwork();\nmodule.exports = { f: () => 1 };\n`;
-    expect(foldJs(body("a[i + 1] = 0;")).stats.sinkCallsRemoved).toBe(0);
-    expect(foldJs(body("a[i] = 0;", "i <= a.length")).stats.sinkCallsRemoved).toBe(0);
-    expect(foldJs(body("a = [...a, 1];")).stats.sinkCallsRemoved).toBe(0);
-    expect(foldJs(body("a.push(1);")).stats.sinkCallsRemoved).toBe(0);
-    expect(foldJs(body("a[i] = a[i] ^ 1;")).stats.sinkCallsRemoved).toBe(1);
-  });
-
-  test("a call to a recursive function is kept", () => {
-    const code = `${seed}function spin() { spin(); }\nfunction f(x) { if (typeof x !== "number") { spin(); } return x; }\nmodule.exports = { f };\n`;
-    expect(() => load(foldJs(code).code).f!("a")).toThrow(RangeError);
+  test("a call to a recursive function is kept, by call or by new", () => {
+    for (const inner of ["spin();", "new spin();"]) {
+      const code = `${seed}function spin() { ${inner} }\nfunction f(x) { if (typeof x !== "number") { spin(); } return x; }\nmodule.exports = { f };\n`;
+      expect(() => load(foldJs(code).code).f!("a")).toThrow(RangeError);
+    }
   });
 
   test("a sink that calls another sink is dropped, because a call chain is not a cycle", () => {
-    const code = `${seed}const cache = { n: 0 };\nfunction bump() { cache.n = 1; }\nfunction run() { bump(); }\nrun();\nmodule.exports = { f: () => 1 };\n`;
+    const code = `${seed}function bump() { let k = 1; k = k + 1; }\nfunction run() { bump(); }\nrun();\nmodule.exports = { f: () => 1 };\n`;
     expect(foldJs(code).stats.sinkCallsRemoved).toBe(2);
   });
 
@@ -203,7 +198,7 @@ test("one unparseable entry does not stop the rest of the ASAR from folding", ()
   expect(rep.notes.join("\n")).toContain("bad.js");
   const out = openAsar(join(tmp, "mixed-out.asar"));
   expect(out.read(out.files.find((f) => f.path === "bad.js")!).toString()).toBe("this is { not js");
-  expect(out.read(out.files.find((f) => f.path === "main.js")!).length).toBeLessThan(readFixture("main.bla.js").length / 10);
+  expect(out.read(out.files.find((f) => f.path === "main.js")!).length).toBeLessThan(readFixture("main.bla.js").length / 5);
   out.close();
 });
 

@@ -68,7 +68,7 @@ describe("run wrapper", () => {
 
   test("a hardened target is cleaned before REA sees it, and REA gets the cleaned path", () => {
     const work = join(tmp, "w1");
-    const r = run(target, { work, rea: "test $(wc -c < {target}) -lt 20000" }); // fails if REA were given the 137 KB original
+    const r = run(target, { work, rea: "test $(wc -c < {target}) -lt 30000" }); // fails if REA were given the 137 KB original
     expect(r.verdict).toBe("ok");
     expect(r.prepared).toContain("a-clean");
     expect(r.attempts).toHaveLength(1);
@@ -117,6 +117,14 @@ describe("run wrapper", () => {
     expect(r.verdict).toBe("rea-failed");
     expect(r.reason).toContain("without coverage");
     expect(r.attempts).toHaveLength(1);
+  });
+
+  test("the coverage flag skips an ASAR target instead of running it through node", () => {
+    const asar = join(tmp, "flagged.asar");
+    writeFileSync(asar, floodAsar(150));
+    const r = run(asar, { work: join(tmp, "w6a"), coverage: true });
+    expect(r.verdict).toBe("cleaned");
+    expect(r.notes).toEqual(["coverage skipped: an ASAR is not executable by node"]);
   });
 
   test("a second run in the same work dir does not keep files of the first", () => {

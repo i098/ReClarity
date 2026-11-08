@@ -140,46 +140,16 @@ function sinkCall(st: AnyNode): string | undefined {
   return callee.type === "Identifier" && args.every((a) => a.type === "Literal") ? callee.name : undefined;
 }
 
-const isCount = (e: AnyNode | null | undefined): boolean => e?.type === "Literal" && typeof e.value === "number" && Number.isFinite(e.value) && Math.abs(e.value) <= 1e6;
-
-/** `for (let i = N; i < M; i++)`, N a literal and M a literal or `x.length`. The body never moves `i`; for `x.length` it never reassigns `x`, grows an array, or writes a computed index other than `i`. */
-function boundedLoop(n: AnyNode): boolean {
-  if (n.type !== "ForStatement" || n.init?.type !== "VariableDeclaration" || n.init.declarations.length !== 1) return false;
-  const d = n.init.declarations[0]!;
-  if (d.id.type !== "Identifier" || !isCount(d.init)) return false;
-  const i = d.id.name;
-  const { test, update } = n;
-  if (test?.type !== "BinaryExpression" || test.left.type !== "Identifier" || test.left.name !== i) return false;
-  const r = test.right;
-  const byLength = r.type === "MemberExpression" && !r.computed && r.object.type === "Identifier" && r.property.type === "Identifier" && r.property.name === "length";
-  if (!(isCount(r) && (test.operator === "<" || test.operator === "<=")) && !(byLength && test.operator === "<")) return false;
-  if (!(update?.type === "UpdateExpression" && update.operator === "++" && update.argument.type === "Identifier" && update.argument.name === i)) return false;
-  const bound = byLength && r.type === "MemberExpression" && r.object.type === "Identifier" ? r.object.name : undefined;
-  let ok = true;
-  walk(n.body, (x) => {
-    if (x.type === "UpdateExpression" && x.argument.type === "Identifier" && x.argument.name === i) ok = false;
-    else if (x.type === "AssignmentExpression") {
-      const l = x.left;
-      if (l.type === "Identifier" && (l.name === i || l.name === bound)) ok = false;
-      else if (l.type === "MemberExpression" && !l.computed && l.property.type === "Identifier" && l.property.name === "length") ok = false;
-      else if (bound && l.type === "MemberExpression" && l.computed && !(l.property.type === "Identifier" && l.property.name === i)) ok = false;
-    } else if (x.type === "CallExpression" && x.callee.type === "MemberExpression" && x.callee.property.type === "Identifier" && ["push", "unshift", "splice"].includes(x.callee.property.name)) ok = false;
-  });
-  return ok;
-}
-
 /**
  * Greatest set of functions F such that: F touches only its own locals, other sinks and private
- * state; its body has no `this`, `throw`, loop other than a bounded counter loop, or call to
- * anything but another sink, and no member access on private state that does not start as an
- * object or array literal; F is not part of a call cycle (so it cannot throw or hang by its own
- * code); that state is used by sinks only; and every use of F outside the set is a droppable
- * call statement (so dropping all of them leaves F unreachable).
+ * state; its body has no `this`, `throw`, loop, member access, or call to anything but another
+ * sink; F is not part of a call cycle (so it cannot throw or hang by its own code); that state
+ * is used by sinks only; and every use of F outside the set is a droppable call statement (so
+ * dropping all of them leaves F unreachable).
  */
 function findSinks(decls: Decl[], roots: AnyNode[], rebound: Set<string>): Set<string> {
   const fns = new Set(decls.filter((d) => d.isFn && !rebound.has(d.name)).map((d) => d.name));
   const states = new Set(decls.filter((d) => d.isState && !rebound.has(d.name)).map((d) => d.name));
-  const bareStates = new Set(decls.filter((d) => d.isState && !(d.node.type === "VariableDeclaration" && (d.node.declarations[0]?.init?.type === "ObjectExpression" || d.node.declarations[0]?.init?.type === "ArrayExpression"))).map((d) => d.name));
   const declOf = new Map(decls.map((d) => [d.name, d]));
   const callees = (name: string): string[] => {
     const d = declOf.get(name);
@@ -187,7 +157,7 @@ function findSinks(decls: Decl[], roots: AnyNode[], rebound: Set<string>): Set<s
     const local = declaredIn(d.node);
     const out: string[] = [];
     walk(d.node.body, (x) => {
-      if (x.type === "CallExpression" && x.callee.type === "Identifier" && fns.has(x.callee.name) && !local.has(x.callee.name)) out.push(x.callee.name);
+      if ((x.type === "CallExpression" || x.type === "NewExpression") && x.callee.type === "Identifier" && fns.has(x.callee.name) && !local.has(x.callee.name)) out.push(x.callee.name);
     });
     return out;
   };
@@ -212,9 +182,8 @@ function findSinks(decls: Decl[], roots: AnyNode[], rebound: Set<string>): Set<s
       const local = declaredIn(d.node);
       let unsafe = false;
       walk(d.node, (x) => {
-        if (x.type === "ThisExpression" || x.type === "ThrowStatement" || x.type === "ForInStatement" || x.type === "ForOfStatement" || x.type === "WhileStatement" || x.type === "DoWhileStatement" || (x.type === "ForStatement" && !boundedLoop(x))) unsafe = true;
+        if (x.type === "ThisExpression" || x.type === "ThrowStatement" || x.type === "MemberExpression" || x.type === "ForStatement" || x.type === "ForInStatement" || x.type === "ForOfStatement" || x.type === "WhileStatement" || x.type === "DoWhileStatement") unsafe = true;
         else if ((x.type === "CallExpression" || x.type === "NewExpression") && x.callee.type === "Identifier" && !fns.has(x.callee.name)) unsafe = true;
-        else if (x.type === "MemberExpression" && x.object.type === "Identifier" && !local.has(x.object.name) && bareStates.has(x.object.name)) unsafe = true;
       });
       const escapes = unsafe || inCycle(d.name) || d.uses.some((u) => !local.has(u) && !fns.has(u) && !states.has(u) && u !== "Math" && u !== "undefined");
       const used = outside.reduce((n, o) => n + o.u.filter((u) => u === d.name).length, 0);

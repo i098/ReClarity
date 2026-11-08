@@ -1,6 +1,6 @@
 # Proof: A/B/C runs
 
-Run on 2026-11-08 on this host. Tool: `skills/anti-bla/scripts/bench.ts`.
+Run on 2026-11-08 on this host, recorded at commit 67c7245. Tool: `skills/anti-bla/scripts/bench.ts`. Later fold changes (per-file fold, `node_modules` kept, stricter sink rules: loops and member access are now refused, so no sink call is removed on the real BLA fixture) are not re-measured: the packed plain and hardened ASAR pair and the REA build are not in this repository, so `bench.ts` was not re-run. Arm C numbers describe the older fold code.
 
 ## Setup
 

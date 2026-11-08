@@ -41,6 +41,9 @@ function hashNode(path: string): string {
 /** Hash of a file, or of a directory's names and contents. The named path is resolved; links below it hash their link text and are never followed. */
 export const treeHash = (path: string): string => hashNode(realpathSync(path));
 
+/** Node cannot execute an ASAR, so coverage never applies to one. */
+const executable = (target: string): boolean => !realpathSync(target).endsWith(".asar");
+
 /** Sanitize, then fold, into work/<tag>. Returns the cleaned path; coverage notes go to `notes`. */
 export function prepare(target: string, work: string, tag: string, withCoverage: boolean, notes: string[] = []): string {
   const src = realpathSync(target);
@@ -78,7 +81,9 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
   const notes: string[] = [];
   const s = scan(target);
   const cleaned = s.score > 0;
-  const prepared = cleaned ? prepare(target, opts.work, "a", !!opts.coverage, notes) : target;
+  const withCoverage = !!opts.coverage && executable(target);
+  if (opts.coverage && !withCoverage) notes.push("coverage skipped: an ASAR is not executable by node");
+  const prepared = cleaned ? prepare(target, opts.work, "a", withCoverage, notes) : target;
   const rep: RunReport = { tool: "anti-bla/run", target, scan: s, attempts: [], prepared, verdict: cleaned ? "cleaned" : "plain-rea", notes };
   if (opts.rea) {
     const first = check(ledger);
@@ -87,7 +92,7 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
     let a = runRea(opts.rea, prepared, ledger);
     rep.attempts.push(a);
     if (a.capacityError) {
-      const coverageOnRetry = hasSandbox() && !realpathSync(target).endsWith(".asar");
+      const coverageOnRetry = hasSandbox() && executable(target);
       const second = prepare(target, opts.work, "b", coverageOnRetry, notes);
       const secondHash = treeHash(second);
       if (ledger.tried.includes(inputHash(secondHash))) {

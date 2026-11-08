@@ -26,7 +26,7 @@ Install once: `bun install` in `skills/anti-bla/` (pins `acorn`). All tools run 
 2. **Run with the wrapper.** `bun run.ts <target> --work <dir> --rea "<rea command with {target}>"` scans, cleans a copy, runs REA under the caps and retries once on a capacity error. Add `--coverage` for plain JS to quarantine decoy suspects.
 3. Or call the steps one by one:
    - `bun sanitize.ts <target> <out>`: drop ASAR flood entries, zero decoy fuse sentinels, drop BLA config files. Writes `reaEnv` if you must read the original (`REA_ASAR_MAX_HEADER_BYTES`, see `references/rea-env.md`).
-   - `bun fold-js.ts <src> <out>`: fold seed predicates, drop dead branches, remove unreached declarations and sink calls (calls to functions that cannot throw or loop and touch only their own locals and private state).
+   - `bun fold-js.ts <src> <out>`: fold seed predicates, drop dead branches, remove unreached declarations and sink calls (literal-argument calls to non-recursive functions with no `this`, `throw`, loop, member access or call to a non-sink, touching only their own locals and private state).
    - `bun coverage.ts <target> --out <copy>`: sandbox run, then `run` / `not_run` / `decoy_suspect` / `bait_ran` per top-level statement. Decoy suspects leave the copy and go whole into `<copy>.quarantine.json`, beside it. A run that crashed or timed out quarantines nothing.
 4. **Budget.** `bun guard.ts init|charge|check <ledger.json>`. Defaults: 300k tokens and 30 minutes per target (`ANTI_BLA_MAX_TOKENS`, `ANTI_BLA_MAX_SECONDS`). At the cap, stop and report.
 5. **Obligation fixtures** only for statements `coverage` marked `run` (`fixtureTargets` in `guard.ts`, at most 200). If the sandbox run exited nonzero or by signal, there are no fixtures: the labels are unreliable.

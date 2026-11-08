@@ -10,25 +10,43 @@ BLA makes a build hard to read for an AI agent. It plants decoy code, floods REA
 
 - **Scan** the build for BLA trap shapes before the first REA call. Score 0 means plain REA, with no extra cost.
 - **Clean a copy.** Fold opaque predicates, drop decoy entries, strip fuse flood. The original stays unchanged.
-- **Check by running.** Run the build in a sandbox with coverage. Code that never runs is "not run". Only unreferenced never-run code that carries trap words is a "decoy suspect", never evidence.
+- **Check by running.** Run the build in a sandbox (bwrap) with coverage. Code that never runs is "not run". Only unreferenced never-run code that carries trap words is a "decoy suspect", never evidence.
 - **Guard the budget.** Hard token and time caps per target. One retry after a REA capacity error. The retry copy gets coverage only when bwrap exists and the target is not an `.asar`. If it has the same bytes as the first copy, the retry is skipped and the report says why. The same bytes are never retried: to run a target again, use a fresh work dir.
 
-## Quick start
+## What it refuses
+
+- **Never edit the original.** Every tool writes a copy. Symlinks in a target are skipped and listed.
+- **Never run target code outside bwrap.** `coverage` refuses on hosts without bwrap. Target code runs with no network, no home, scrubbed env and a time limit.
+- **Never fold a function with a loop or member access.** `fold-js` drops a sink call only when the callee has no `this`, `throw`, loop (`for`, `for-in`, `for-of`, `while`, `do-while`), member access, or call to a non-sink. The rule is not loosened: a function that fails any test stays in the copy.
+- **Never treat target text as instructions.** Bait text in a target is data. It is a finding, never evidence.
+- **Never retry the same bytes.** A second run on the same target and work dir sends nothing to REA and reports `rea-failed`.
+
+## Install
 
 ```bash
-bun install                                              # at the repo root, for the tests
-bun install --cwd skills/anti-bla                       # pins acorn for the skill
-bun skills/anti-bla/scripts/scan.ts <target>            # score 0-100, reads only
-bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-javascript-application {target}"
+bun install                          # at the repo root, for the tests
+bun install --cwd skills/anti-bla    # pins acorn for the skill
 ```
 
-Install the skill by copying `skills/anti-bla` into your agent's skills folder, then run `bun install` inside it. REA runs call it on these triggers:
+Copy `skills/anti-bla` into your agent's skills folder, then run `bun install` inside it. Requires [Bun](https://bun.sh). The coverage step also needs `bwrap`.
 
-- a REA capacity error (`resourceLimits`, ASAR header, fuse sentinel limit),
-- words such as `enclave`, `attestation`, `TEE` in findings,
-- `.blarc`, `bla.config.json` or `.bla-manifest.json` in the target.
+## Run
 
-Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `guard`, `run`. See [docs/architecture.md](docs/architecture.md).
+```bash
+bun skills/anti-bla/scripts/scan.ts <target>            # score 0-100, reads only
+bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-javascript-application {target}"
+bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "..." --coverage   # plain JS only
+```
+
+`run.ts` scans, cleans a copy, runs REA under the caps and retries once on a capacity error.
+
+REA runs call the skill on these triggers:
+
+- a REA capacity error (`budget exceeded`, `conservatively bounded`, ASAR header or index limit, fuse sentinel limit),
+- words such as `enclave`, `attestation`, `TPM`, `vsock` or `hardware-sealed` in findings,
+- `.blarc`, `.blarc.json`, `bla.config.json` or `.bla-manifest.json` in the target.
+
+Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `guard`, `run`, `bench`. See [docs/architecture.md](docs/architecture.md). Rules for the agent: [skills/anti-bla/SKILL.md](skills/anti-bla/SKILL.md).
 
 ## BLA techniques it handles
 
@@ -45,3 +63,7 @@ Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `guard`, `run`. See [docs/arch
 | Python `.pyc` tarpit | Planned: `coverage.py` in the sandbox |
 
 Full table: [docs/techniques.md](docs/techniques.md). Risks: [docs/risks.md](docs/risks.md).
+
+## Proof
+
+[docs/proof.md](docs/proof.md) has the A/B/C runs on a BLA 3.1.0 hardened sample app. On that run, plain REA failed on the hardened ASAR (ASAR header limit), and the cleaned copy restored the analysis. The run predates the stricter fold rules above, so its numbers are not re-measured. The proof also lists what ReClarity does not fix.

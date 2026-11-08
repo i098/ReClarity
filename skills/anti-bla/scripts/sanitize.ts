@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
-// Write a clean COPY of a build for REA: drop ASAR header flood, neutralize decoy fuse
-// sentinels, drop BLA config files, and clean the data formats (SQLite, models, PCAP, EVM, Dart pools). The original is never written. Code is never deleted
-// here: logic that only looks like a decoy is handled by coverage.ts ("not run").
-import { copyFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, writeSync } from "node:fs";
+// Write a clean COPY of a build for REA: drop ASAR header flood, neutralize decoy fuse sentinels,
+// cut BLA's native shield (Go, Rust, Flutter), drop WASM alias exports and BEAM decoy chunks, drop BLA config
+// files, and clean the data formats (SQLite, models, PCAP, EVM, Dart pools). The original is never written.
+// Code is never deleted here: logic that only looks like a decoy is handled by coverage.ts ("not run").
+import { copyFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, truncateSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
 import { cleanApk, findDartDecoys, zeroDecoys } from "./lib/dart.ts";
@@ -12,10 +13,13 @@ import { SENTINEL, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
 import { cleanModel } from "./lib/model.ts";
 import { cleanPcap } from "./lib/pcap.ts";
 import { dropHoney, isSqlite } from "./lib/sqlite.ts";
-import { CONFIG_NAMES, FLOOD_MIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
+import { CONFIG_NAMES, FLOOD_MIN, MAX_BIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
+import { cleanBeam } from "./lib/beam.ts";
+import { REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
+import { cleanWasm } from "./lib/wasm.ts";
 
 export interface Action {
-  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed" | "copied-asar-unchanged" | "copied" | "skipped-symlink";
+  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "copied" | "skipped-symlink" | "wasm-decoys-dropped" | "beam-decoys-dropped" | "native-trailer-cut" | "go-buildinfo-plant-zeroed" | "rustc-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed";
   path: string;
   detail?: string;
 }
@@ -62,24 +66,50 @@ function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
   }
 }
 
+function sanitizeWasm(src: string, dst: string, r: SanitizeReport, isNamedByGlue: (name: string) => boolean): void {
+  const cleaned = cleanWasm(readFileSync(src), isNamedByGlue);
+  if (!cleaned) return copyFileSync(src, dst);
+  writeFileSync(dst, cleaned.buffer, { mode: statSync(src).mode });
+  r.actions.push({ kind: "wasm-decoys-dropped", path: src, detail: `${cleaned.droppedExports} alias exports, custom sections: ${cleaned.droppedSections.join(", ") || "none"}` });
+}
+
+function sanitizeBeam(src: string, dst: string, r: SanitizeReport): void {
+  const cleaned = cleanBeam(readFileSync(src));
+  if (!cleaned) return copyFileSync(src, dst);
+  writeFileSync(dst, cleaned.buffer, { mode: statSync(src).mode });
+  r.actions.push({ kind: "beam-decoys-dropped", path: src, detail: `${cleaned.droppedChunks} decoy chunks, ${cleaned.droppedAtoms} canary atoms` });
+}
+
+/** Cut BLA's appended shield, then zero the decoys it planted inside the file. Sizes and offsets of what stays do not move. */
 function sanitizeBinary(src: string, dst: string, r: SanitizeReport): void {
   copyFileSync(src, dst);
-  // shortcut: reads the whole binary into memory; stream it if a 1 GB target ever shows up
-  const bin = readFileSync(src);
-  const decoys = findSentinels(bin).filter((s) => s.decoy);
-  const dart = findDartDecoys(bin);
-  if (!decoys.length && !dart.length) return;
+  // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
+  let bytes = readFileSync(src);
+  const cut = trailerStart(bytes);
+  if (cut >= 0) {
+    truncateSync(dst, cut);
+    r.actions.push({ kind: "native-trailer-cut", path: src, detail: `${bytes.length - cut} B of BLA shield removed at ${cut}` });
+    bytes = bytes.subarray(0, cut);
+  }
+  const fuses = findSentinels(bytes).filter((s) => s.decoy);
+  const dart = findDartDecoys(bytes);
+  // the planted header, strings and marker. BLA clears the section before it plants, so any real build info there is not restored.
+  const go = goBuildInfos(bytes).filter(isGoFlood).filter((g) => g.plantEnd >= 0);
+  const rustFlood = rustcPaths(bytes);
+  const rust = rustFlood.distinct > REA_MAX_RUSTC_HASHES ? rustFlood.decoyOffsets : [];
+  // zero only the decoy marker, hash or plant: REA no longer sees it
+  const zero: [number, number][] = [...fuses.map((s): [number, number] => [s.offset, SENTINEL.length]), ...go.map((g): [number, number] => [g.offset, g.plantEnd - g.offset]), ...rust.map((o): [number, number] => [o, 40]), ...dart.map((d): [number, number] => [d.start, d.end - d.start])];
+  if (!zero.length) return;
   const fd = openSync(dst, "r+");
   try {
-    // zero only the 32-byte marker: size and offsets stay the same, REA no longer sees a sentinel
-    for (const s of decoys) writeSync(fd, Buffer.alloc(SENTINEL.length), 0, SENTINEL.length, s.offset);
-    // Dart decoys are zeroed in place too, so every offset in the binary stays valid
-    for (const d of dart) writeSync(fd, Buffer.alloc(d.end - d.start), 0, d.end - d.start, d.start);
+    for (const [at, len] of zero) writeSync(fd, Buffer.alloc(len), 0, len, at);
   } finally {
     closeSync(fd);
   }
-  if (decoys.length) r.actions.push({ kind: "fuse-decoys-zeroed", path: src, detail: `${decoys.length} decoy sentinels zeroed` });
+  if (fuses.length) r.actions.push({ kind: "fuse-decoys-zeroed", path: src, detail: `${fuses.length} decoy sentinels zeroed` });
+  if (go.length) r.actions.push({ kind: "go-buildinfo-plant-zeroed", path: src, detail: `${go.length} BLA build-info plant zeroed; real build info that BLA overwrote is not restored` });
   if (dart.length) r.actions.push({ kind: "dart-decoys-zeroed", path: src, detail: `${dart.length} blocks, ${dart.reduce((n, d) => n + d.entries, 0)} pool entries, ${dart.reduce((n, d) => n + d.records, 0)} fake snapshot records` });
+  if (rust.length) r.actions.push({ kind: "rustc-decoys-zeroed", path: src, detail: `${rust.length} decoy rustc hashes zeroed of ${rustFlood.distinct}` });
 }
 
 /** Clean one data format file from src into dst. A file that is not BLA-shaped is copied byte for byte. */
@@ -136,20 +166,24 @@ function sanitizeData(kind: NonNullable<ReturnType<typeof dataKind>>, src: strin
   }
 }
 
-function copyTree(src: string, dst: string, r: SanitizeReport): void {
+function copyTree(src: string, dst: string, r: SanitizeReport, isNamedByGlue: (name: string) => boolean): void {
   const st = statSync(src);
   if (st.isDirectory()) {
     mkdirSync(dst, { recursive: true });
     for (const e of readdirSync(src)) {
       const p = join(src, e);
       if (lstatSync(p).isSymbolicLink()) r.actions.push({ kind: "skipped-symlink", path: p });
-      else copyTree(p, join(dst, e), r);
+      else copyTree(p, join(dst, e), r, isNamedByGlue);
     }
     return;
   }
   mkdirSync(dirname(dst), { recursive: true });
+  const ext = extname(src);
   if (CONFIG_NAMES.includes(basename(src))) r.actions.push({ kind: "dropped-config", path: src });
-  else if (st.size >= MIB && isNativeExecutable(src)) sanitizeBinary(src, dst, r);
+  else if (ext === ".asar") sanitizeAsar(src, dst, r);
+  else if (ext === ".wasm") sanitizeWasm(src, dst, r, isNamedByGlue);
+  else if (ext === ".beam") sanitizeBeam(src, dst, r);
+  else if (st.size <= MAX_BIN && isNativeExecutable(src)) sanitizeBinary(src, dst, r);
   else if (dataKind(src)) {
     try {
       sanitizeData(dataKind(src)!, src, dst, r);
@@ -158,8 +192,19 @@ function copyTree(src: string, dst: string, r: SanitizeReport): void {
       r.actions.push({ kind: "copied", path: src, detail: `not cleaned: ${(e as Error).message}` });
     }
   }
-  else if (extname(src) === ".asar") sanitizeAsar(src, dst, r);
   else copyFileSync(src, dst);
+}
+
+/** Names a JS file in the tree uses, to keep decoy-shaped exports that host code needs. Reads the JS once, on first use. */
+function glueReader(root: string): (name: string) => boolean {
+  let text: string | undefined;
+  const read = (p: string): string[] => {
+    if (lstatSync(p).isSymbolicLink()) return [];
+    const st = statSync(p);
+    if (st.isDirectory()) return readdirSync(p).flatMap((e) => read(join(p, e)));
+    return [".js", ".cjs", ".mjs"].includes(extname(p)) && st.size <= MAX_BIN ? [readFileSync(p, "utf8")] : [];
+  };
+  return (name) => (text ??= statSync(root).isDirectory() ? read(root).join("\n") : "").includes(name);
 }
 
 export function sanitize(target: string, out: string): SanitizeReport {
@@ -168,7 +213,7 @@ export function sanitize(target: string, out: string): SanitizeReport {
   if (o === t || o.startsWith(t + sep) || t.startsWith(o + sep)) throw new Error("refusing: output must be outside the target and not contain it");
   const r: SanitizeReport = { tool: "anti-bla/sanitize", target, out, actions: [], reaEnv: {}, suspects: [] };
   const isDir = statSync(t).isDirectory();
-  copyTree(t, isDir ? o : join(o, basename(t)), r);
+  copyTree(t, isDir ? o : join(o, basename(t)), r, glueReader(t));
   return r;
 }
 

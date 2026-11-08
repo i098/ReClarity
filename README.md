@@ -63,7 +63,7 @@ Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `runtime-guard`, `guard`, `run
 | Electron IPC decoys | Plain JS only: keep channels that fire (`coverage`, not for ASAR) |
 | ASAR header and fuse flood | Raise `REA_ASAR_MAX_HEADER_BYTES`, strip decoy entries and sentinels |
 | SQLite honey tables, model nesting breaker, PCAP flood, EVM filler, Flutter pool decoys | Clean copy per format: drop BLA's entries, keep real content (`sanitize`) |
-| WASM, Go, Rust, BEAM caps | Planned: clean copy per format |
+| WASM, Go, Rust, BEAM caps | `sanitize.ts` writes a clean copy: alias exports and decoy sections, Go build-info plant, BLA native trailer, decoy rustc paths, BEAM decoy chunks and atoms |
 | Runtime guard (CDP, Frida, `--inspect`) | Built: `runtime-guard.ts` runs the build in the sandbox with nothing attached, then once per inspector signal, and reports the output, IPC, file and code-path differences. The not-attached run is the observation |
 | Python `.pyc` tarpit | Planned: `coverage.py` in the sandbox |
 

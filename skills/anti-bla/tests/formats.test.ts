@@ -1,236 +1,180 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
-import { cleanApk, findApkDecoys, findDartDecoys, zeroDecoys } from "../scripts/lib/dart.ts";
-import { cleanEvm, cleanEvmHex } from "../scripts/lib/evm.ts";
-import { cleanModel, findModelDecoys } from "../scripts/lib/model.ts";
-import { cleanPcap, countShieldRecords } from "../scripts/lib/pcap.ts";
-import { findHoney } from "../scripts/lib/sqlite.ts";
-import { entryData, readZip, replaceData, writeZip, type ZipEntry } from "../scripts/lib/zip.ts";
+import { join } from "node:path";
+import { cleanBeam, countBeamDecoys } from "../scripts/lib/beam.ts";
+import { goBuildInfos, rustcPaths } from "../scripts/lib/native.ts";
+import { cleanWasm, parseExports, parseSections } from "../scripts/lib/wasm.ts";
 import { sanitize } from "../scripts/sanitize.ts";
-import { scan } from "../scripts/scan.ts";
-import { evmWithFiller, flutterLookalike, readFixture } from "./fixtures/make.ts";
+import { scan, type ScanReport } from "../scripts/scan.ts";
+import { beamAtoms, beamAtomsCompact, beamChunk, beamForm, goElfWithClaim, readFixture, rustBinary, wasmCustom, wasmWith } from "./fixtures/make.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "antibla-fmt-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
-const put = (name: string, data: Buffer | string): string => {
-  const p = join(tmp, name);
-  mkdirSync(join(p, ".."), { recursive: true });
-  writeFileSync(p, data);
-  return p;
-};
+const ids = (r: ScanReport) => r.findings.map((f) => f.id);
+let n = 0;
+/** Write `bytes` as `name` in a fresh folder, sanitize that folder, return the cleaned file. */
+function cleaned(name: string, bytes: Buffer, extra: Record<string, string> = {}): { out: Buffer; src: string; report: ReturnType<typeof sanitize> } {
+  const dir = join(tmp, `t${n++}`);
+  mkdirSync(dir);
+  writeFileSync(join(dir, name), bytes);
+  for (const [f, text] of Object.entries(extra)) writeFileSync(join(dir, f), text);
+  const report = sanitize(dir, join(tmp, `o${n}`));
+  return { out: readFileSync(join(tmp, `o${n}`, name)), src: dir, report };
+}
+const exportNames = (b: Buffer) => parseExports(parseSections(b)!.find((s) => s.id === 7)!.payload)!.map((e) => e.name);
 
-describe("SQLite", () => {
-  test("honey tables dropped, the business table and its rows kept", () => {
-    const src = put("a/app.sqlite", readFixture("app.bla.sqlite"));
-    expect(findHoney(src).tables.length).toBeGreaterThan(0);
-    expect(scan(join(tmp, "a")).findings.map((f) => f.id)).toContain("sqlite_honey");
-    const out = join(tmp, "a-out");
-    sanitize(join(tmp, "a"), out);
-    const db = new Database(join(out, "app.sqlite"), { readonly: true });
-    const names = db.query<{ name: string }, []>("select name from sqlite_master").all().map((r) => r.name);
-    expect(names.some((n) => n.includes("enclave"))).toBe(false);
-    expect(db.query("select account_id, plan_tier from license_cache").all()).toEqual([{ account_id: "acct_prod_01", plan_tier: "enterprise" }]);
-    db.close();
-    expect(findHoney(src).tables.length).toBeGreaterThan(0); // original untouched
+describe("WASM", () => {
+  test("real BLA output: decoys found, cleaned module is the original module", () => {
+    const bla = readFixture("tiny.bla.wasm");
+    const r = scan(join(__dirname, "fixtures", "tiny.bla.wasm"));
+    expect(ids(r)).toEqual(expect.arrayContaining(["wasm_export_flood", "wasm_decoy_sections"]));
+    const c = cleaned("tiny.bla.wasm", bla);
+    expect(exportNames(c.out)).toEqual(["add", "mul"]);
+    // every section the original has stays byte for byte; the cleaned export section is the original's
+    expect(c.out.subarray(8).equals(readFixture("tiny.wasm").subarray(8))).toBe(true);
+    expect(scan(join(tmp, `o${n}`, "tiny.bla.wasm")).score).toBe(0);
   });
 
-  test("a user table that shares one honey name, with other columns, is not dropped", () => {
-    const p = join(tmp, "b/user.sqlite");
-    mkdirSync(join(tmp, "b"), { recursive: true });
-    const db = new Database(p);
-    db.run("create table enclave_key_hierarchy (id integer primary key, note text)");
-    db.run("insert into enclave_key_hierarchy (note) values ('mine')");
-    db.close();
-    expect(findHoney(p).tables).toEqual([]);
-    sanitize(join(tmp, "b"), join(tmp, "b-out"));
-    const out = new Database(join(tmp, "b-out/user.sqlite"), { readonly: true });
-    expect(out.query("select note from enclave_key_hierarchy").all()).toEqual([{ note: "mine" }]);
-    out.close();
+  test("an export that glue imports stays even when it has a decoy name", () => {
+    const bytes = wasmWith([["add", 0], ["mul", 1], ["bla_enclave_verify_7", 0], ["enclave_export_ab12_1_eee", 0]]);
+    const c = cleaned("m.wasm", bytes, { "glue.js": "instance.exports.bla_enclave_verify_7()" });
+    expect(exportNames(c.out)).toEqual(["add", "mul", "bla_enclave_verify_7"]);
   });
 
-  test("a database with a live -wal file is copied, not cleaned", () => {
-    put("c/app.sqlite", readFixture("app.bla.sqlite"));
-    put("c/app.sqlite-wal", "pending");
-    const r = sanitize(join(tmp, "c"), join(tmp, "c-out"));
-    expect(r.actions.some((a) => a.kind === "sqlite-honey-dropped")).toBe(false);
-    expect(readFileSync(join(tmp, "c-out/app.sqlite")).equals(readFixture("app.bla.sqlite"))).toBe(true);
+  test("a decoy-named export that aliases nothing real stays", () => {
+    const bytes = wasmWith([["enclave_export_ab12_1_eee", 0]]);
+    expect(cleanWasm(bytes)).toBeUndefined();
   });
-});
 
-describe("models", () => {
-  for (const [plain, bla] of [
-    ["tiny.safetensors", "tiny.bla.safetensors"],
-    ["tiny.gguf", "tiny.bla.gguf"],
-  ] as const) {
-    test(`${plain}: nesting breaker and bait removed, the file returns to the plain bytes`, () => {
-      const src = put(`m/${bla}`, readFixture(bla));
-      const d = findModelDecoys(src)!;
-      expect(d.depth).toBeGreaterThan(32);
-      expect(d.remove.length).toBeGreaterThan(1);
-      const dst = join(tmp, `m/clean.${plain.split(".")[1]}`);
-      expect(cleanModel(src, dst)).toBeDefined();
-      expect(readFileSync(dst).equals(readFixture(plain))).toBe(true);
-      expect(findModelDecoys(dst)?.remove ?? []).toEqual([]);
-    });
-  }
+  test("decoy custom sections go; a custom section with another name stays", () => {
+    const keep = wasmCustom("producers", Buffer.from("rustc"));
+    const bytes = Buffer.concat([wasmWith([["add", 0]]), wasmCustom("bla.canary.credentials"), keep, wasmCustom("enclave.attestation.0")]);
+    const c = cleaned("s.wasm", bytes);
+    expect(parseSections(c.out)!.map((s) => s.id)).toEqual([1, 3, 7, 10, 0]);
+    expect(c.out.subarray(c.out.length - keep.length).equals(keep)).toBe(true);
+  });
 
-  test("a safetensors file with deep JSON but no BLA note is kept as it is", () => {
-    const deep = Array.from({ length: 40 }).reduce<unknown>((v) => [v], "x");
-    const header = Buffer.from(JSON.stringify({ __metadata__: { note: "mine" }, w: { dtype: "F32", shape: [1], data_offsets: [0, 4], deep } }));
-    const len = Buffer.alloc(8);
-    len.writeBigUInt64LE(BigInt(header.length));
-    const src = put("m/user.safetensors", Buffer.concat([len, header, Buffer.alloc(4)]));
-    expect(findModelDecoys(src)?.remove ?? []).toEqual([]);
-    expect(cleanModel(src, join(tmp, "m/user-out.safetensors"))).toBeUndefined();
+  test("a module BLA never touched is copied unchanged", () => {
+    const plain = readFixture("tiny.wasm");
+    const c = cleaned("p.wasm", plain);
+    expect(c.out.equals(plain)).toBe(true);
+    expect(c.report.actions).toEqual([]);
+  });
+
+  test("bytes that are not a module are not scanned and copied as they are", () => {
+    const junk = Buffer.from("\0asm\x01\0\0\0\x07\xff\xff\xff\xff\x0f");
+    expect(cleanWasm(junk)).toBeUndefined();
+    const f = join(tmp, "junk.wasm");
+    writeFileSync(f, junk);
+    expect(scan(f).notes.join()).toContain("not a well-framed WASM module");
   });
 });
 
-describe("PCAP", () => {
-  test("BLA packets dropped, the real packet kept byte for byte", () => {
-    const bla = readFixture("app.bla.pcap");
-    expect(countShieldRecords(bla)).toBeGreaterThan(0);
-    const c = cleanPcap(bla)!;
-    expect(c.buffer.equals(readFixture("app.pcap"))).toBe(true);
-    expect(c.kept).toBe(1);
+describe("BEAM", () => {
+  test("real BLA output: decoys found, cleaned form is the original form", () => {
+    const f = join(__dirname, "fixtures", "tiny.bla.beam");
+    expect(ids(scan(f))).toContain("beam_chunk_flood");
+    const c = cleaned("tiny.bla.beam", readFixture("tiny.bla.beam"));
+    expect(c.out.equals(readFixture("tiny.beam"))).toBe(true);
   });
 
-  test("a real packet that only mentions the marker is kept", () => {
-    const plain = readFixture("app.pcap");
-    const body = Buffer.from("user traffic [BLA-PCAP-SHIELD] in a log line");
-    const rec = Buffer.alloc(16);
-    rec.writeUInt32LE(body.length, 8);
-    rec.writeUInt32LE(body.length, 12);
-    const withMention = Buffer.concat([plain, rec, body]);
-    expect(countShieldRecords(withMention)).toBe(0);
-    expect(cleanPcap(withMention)).toBeUndefined();
+  test("canary atoms are cut from a classic and from an OTP 28 compact table; atoms before them keep their index", () => {
+    const real = ["tiny", "slugify"];
+    for (const table of [beamAtoms, beamAtomsCompact]) {
+      const code = beamChunk("Code", Buffer.from("real"));
+      const bytes = beamForm(beamChunk("AtU8", table([...real, "bla_beam_canary", "[BLA-BEAM-SHIELD]", "bla_beam_canary_2"])), code);
+      const out = cleanBeam(bytes)!;
+      expect(out.droppedAtoms).toBe(3);
+      expect(out.buffer.equals(beamForm(beamChunk("AtU8", table(real)), code))).toBe(true);
+    }
   });
 
-  test("a capture of only BLA frames is cleaned to a header, with a note that the original is gone", () => {
-    const bla = readFixture("app.bla.pcap");
-    put("rb/x.pcap", Buffer.concat([bla.subarray(0, 24), bla.subarray(24 + 16 + 60)])); // the fixture's first record is the real one
-    const r = sanitize(join(tmp, "rb"), join(tmp, "rb-out"));
-    expect(readFileSync(join(tmp, "rb-out/x.pcap"))).toHaveLength(24);
-    expect(r.actions[0]?.detail).toContain("cannot be recovered");
+  test("a chunk is a decoy only when its payload starts with the shield marker", () => {
+    const keep = beamChunk("Attr", Buffer.from("not a [BLA-BEAM-SHIELD] decoy"));
+    const bytes = beamForm(keep, beamChunk("Dbgi", Buffer.from("[BLA-BEAM-SHIELD]\0\0")), beamChunk("Code", Buffer.from("real")));
+    expect(countBeamDecoys(bytes)).toEqual({ chunks: 3, decoyChunks: 1, decoyAtoms: 0 });
+    expect(cleanBeam(bytes)!.buffer.equals(beamForm(keep, beamChunk("Code", Buffer.from("real"))))).toBe(true);
   });
 
-  test("a truncated capture is not cleaned", () => {
-    expect(cleanPcap(readFixture("app.bla.pcap").subarray(0, 50))).toBeUndefined();
-  });
-});
-
-describe("EVM", () => {
-  test("trailer and JUMPDEST filler removed; real code kept", () => {
-    const code = evmWithFiller(70_000);
-    const c = cleanEvm(code)!;
-    expect(c.fillerBytes).toBeGreaterThanOrEqual(70_000 - 1);
-    expect(c.buffer.length).toBeLessThan(readFixture("app.evm").length + 2);
-    expect(c.buffer.subarray(0, 40).equals(readFixture("app.evm").subarray(0, 40))).toBe(true);
+  test("an atom named bla_beam_canary that does not lead the shield atom stays", () => {
+    const bytes = beamForm(beamChunk("AtU8", beamAtoms(["a", "bla_beam_canary", "b"])));
+    expect(cleanBeam(bytes)).toBeUndefined();
   });
 
-  test("real solc code with ordinary metadata is not touched", () => {
-    expect(cleanEvm(readFixture("app.evm"))).toBeUndefined();
+  test("a form BLA never touched is copied unchanged, bytes after the form are not read as chunks", () => {
+    const plain = Buffer.concat([readFixture("tiny.beam"), Buffer.from("trailing note")]);
+    expect(countBeamDecoys(plain)).toEqual({ chunks: 6, decoyChunks: 0, decoyAtoms: 0 });
+    expect(cleaned("t.beam", plain).out.equals(plain)).toBe(true);
   });
 
-  test("a hex carrier is cleaned and stays hex", () => {
-    const hex = "0x" + evmWithFiller(70_000).toString("hex");
-    const c = cleanEvmHex(hex)!;
-    expect(c.text.startsWith("0x6080604052")).toBe(true);
-    expect(c.text.length).toBeLessThan(hex.length / 10);
-    expect(cleanEvmHex("0x" + readFixture("app.evm").toString("hex"))).toBeUndefined();
+  test("a truncated form is not scanned", () => {
+    const f = join(tmp, "cut.beam");
+    writeFileSync(f, readFixture("tiny.bla.beam").subarray(0, 100));
+    expect(scan(f).notes.join()).toContain("not a well-framed BEAM form");
   });
 });
 
-describe("Flutter", () => {
-  // app.bla.flutter.so is BLA 3.1.0's own protectNativeBinary output on app.flutter.so (see fixtures/make.ts)
-  const plain = readFixture("app.flutter.so");
-  const bla = readFixture("app.bla.flutter.so");
-  const GO_BUILDINFO = [1024, 1138]; // BLA's Go build-info plant: not a Dart decoy, so it stays in the clean copy
-
-  test("BLA's trailer pool (66 records, 516 package + 516 dart URIs, 2032 tokens) and isolate pool are found", () => {
-    const decoys = findDartDecoys(bla);
-    expect(decoys.map((d) => d.kind).sort()).toEqual(["isolate-pool", "trailer-pool"]);
-    const trailer = decoys.find((d) => d.kind === "trailer-pool")!;
-    expect(trailer.records).toBe(66);
-    expect(trailer.entries).toBe(516 * 2 + 2032);
-    expect(trailer.end).toBe(bla.length - 4_723); // the chaff BLA appends after the pool is not Dart
-    const isolate = decoys.find((d) => d.kind === "isolate-pool")!;
-    expect(isolate.records).toBe(0);
-    expect(isolate.start).toBe(2048 + 52); // the plain ELF's own snapshot header at the section start stays
+describe("Go and Rust binaries", () => {
+  test("real BLA output: shield trailer and fuse decoys go, size and layout of the original binary stay", () => {
+    const f = join(__dirname, "fixtures", "go.bla.elf");
+    expect(ids(scan(f))).toEqual(expect.arrayContaining(["fuse_decoy", "native_shield_trailer", "go_buildinfo_flood"]));
+    const plain = readFixture("go.elf");
+    const c = cleaned("go.bla.elf", readFixture("go.bla.elf"));
+    expect(c.out.length).toBe(plain.length);
+    expect(scan(join(tmp, `o${n}`, "go.bla.elf")).score).toBe(0);
+    expect(c.out.subarray(0, 1536).equals(plain.subarray(0, 1536))).toBe(true);
+    expect(goBuildInfos(c.out).filter((g) => g.plantEnd >= 0)).toEqual([]);
   });
 
-  test("zeroing leaves the file size and every other byte of the plain ELF as it was", () => {
-    const decoys = findDartDecoys(bla);
-    const copy = Buffer.from(bla);
-    zeroDecoys(copy, decoys);
-    expect(copy.length).toBe(bla.length);
-    expect(findDartDecoys(copy)).toEqual([]);
-    const inDecoy = (i: number): boolean => decoys.some((d) => i >= d.start && i < d.end) || (i >= GO_BUILDINFO[0]! && i < GO_BUILDINFO[1]!);
-    for (let i = 0; i < plain.length; i++) if (!inDecoy(i)) expect(copy[i]).toBe(plain[i]!);
-    for (const d of decoys) expect(plain.subarray(d.start, Math.min(d.end, plain.length)).every((x) => x === 0)).toBe(true); // nothing the plain input held is zeroed
+  test("Go: a build-info claim over 1 MiB is zeroed; the rest of the binary stays", () => {
+    const bytes = goElfWithClaim();
+    expect(goBuildInfos(bytes).map((g) => g.claimed)).toEqual([1048577]);
+    expect(ids(scan(writeBin("claim.elf", bytes)))).toContain("go_buildinfo_flood");
+    const c = cleaned("claim.elf", bytes);
+    expect(goBuildInfos(c.out)).toEqual([]);
+    expect(c.out.length).toBe(bytes.length);
+    expect(c.out.subarray(1536).equals(bytes.subarray(1536))).toBe(true);
   });
 
-  test("the plain ELF, a binary with Dart-like strings, and a user pool of real URIs have no decoys", () => {
-    expect(findDartDecoys(plain)).toEqual([]);
-    const pool = Buffer.from(Array.from({ length: 600 }, (_, i) => `package:app_${i}/lib/x.dart`).join("\0") + "\0");
-    expect(findDartDecoys(Buffer.concat([flutterLookalike(), pool]))).toEqual([]);
-  });
-});
-
-describe("APK", () => {
-  const entry = (name: string, data: Buffer, method: 0 | 8): ZipEntry =>
-    replaceData({ name, method, raw: Buffer.alloc(0), crc: 0, size: 0, time: 0, date: 0, flags: 0, version: 20 }, data);
-  const apkWith = (lib: Buffer, other = Buffer.from("<manifest/>")): Buffer =>
-    writeZip([entry("AndroidManifest.xml", other, 8), entry("lib/arm64-v8a/libapp.so", lib, 8), entry("lib/arm64-v8a/libflutter.so", Buffer.from("engine"), 0)]);
-
-  test("zip round trip keeps names and bytes, stored and deflated", () => {
-    const back = readZip(apkWith(Buffer.from("hello hello hello")));
-    expect(back.map((e) => e.name)).toEqual(["AndroidManifest.xml", "lib/arm64-v8a/libapp.so", "lib/arm64-v8a/libflutter.so"]);
-    expect(back.map((e) => entryData(e).toString())).toEqual(["<manifest/>", "hello hello hello", "engine"]);
+  test("Go: a real build info without BLA's marker stays", () => {
+    const bytes = Buffer.from(readFixture("go.elf"));
+    const version = "go1.22.5";
+    const mod = "path\texample.com/app\nbuild\t-compiler=gc\n";
+    const header = Buffer.alloc(32);
+    Buffer.from("ff20476f206275696c64696e663a", "hex").copy(header);
+    header[14] = 8;
+    header[15] = 2;
+    Buffer.concat([header, Buffer.from([version.length]), Buffer.from(version), Buffer.from([mod.length]), Buffer.from(mod)]).copy(bytes, 1024);
+    expect(goBuildInfos(bytes).map((g) => g.plantEnd)).toEqual([-1]);
+    expect(ids(scan(writeBin("real-go.elf", bytes)))).not.toContain("go_buildinfo_flood");
+    expect(cleaned("real-go.elf", bytes).out.equals(bytes)).toBe(true);
   });
 
-  test("Dart decoys zeroed inside libapp.so; every other entry is byte for byte the same", () => {
-    const lib = readFixture("app.bla.flutter.so");
-    const apk = apkWith(lib);
-    expect(findApkDecoys(apk)).toHaveLength(1);
-    const c = cleanApk(apk)!;
-    expect(c.libs).toEqual(["lib/arm64-v8a/libapp.so"]);
-    const back = readZip(c.buffer);
-    const cleaned = entryData(back[1]!);
-    expect(cleaned.length).toBe(lib.length);
-    expect(findDartDecoys(cleaned)).toEqual([]);
-    expect(cleaned.subarray(0, 1024).equals(lib.subarray(0, 1024))).toBe(true);
-    expect(entryData(back[0]!).toString()).toBe("<manifest/>");
-    expect(entryData(back[2]!).toString()).toBe("engine");
+  test("Rust: decoy hashes past REA's 64 are zeroed, real compiler paths stay", () => {
+    const bytes = rustBinary(10, 70);
+    expect(rustcPaths(bytes).distinct).toBe(80);
+    expect(ids(scan(writeBin("rust.elf", bytes)))).toContain("rustc_hash_flood");
+    const c = cleaned("rust.elf", bytes);
+    expect(rustcPaths(c.out).distinct).toBe(10);
+    expect(c.out.length).toBe(bytes.length);
+    expect(c.out.toString("latin1").match(/library\/std\/src\/rt\.rs/g)).toHaveLength(10);
   });
 
-  test("an APK whose libapp.so has no decoys is left alone", () => {
-    expect(cleanApk(apkWith(flutterLookalike()))).toBeUndefined();
+  test("Rust: real hashes over the limit with no decoy path are kept, not guessed away", () => {
+    const bytes = rustBinary(70, 0);
+    const c = cleaned("many.elf", bytes);
+    expect(c.out.equals(bytes)).toBe(true);
   });
 
-  test("scan flags a hardened APK and sanitize writes a clean copy", () => {
-    put("apk/app.apk", apkWith(readFixture("app.bla.flutter.so")));
-    expect(scan(join(tmp, "apk")).findings.map((f) => f.id)).toContain("dart_pool_decoy");
-    const out = join(tmp, "apk-out");
-    sanitize(join(tmp, "apk"), out);
-    expect(scan(out).score).toBe(0);
-  });
-
-  test("a file that is not a ZIP is a note in the scan, not a crash", () => {
-    put("bad/app.apk", "not a zip");
-    expect(scan(join(tmp, "bad")).notes.some((n) => n.includes("not a ZIP"))).toBe(true);
-  });
-
-  test("sanitize copies a bad .apk and a corrupt .sqlite unchanged, notes them, and still cleans the rest", () => {
-    put("bad2/app.apk", "not a zip");
-    put("bad2/broken.sqlite", Buffer.concat([readFixture("app.bla.sqlite").subarray(0, 100), Buffer.alloc(4096, 0xff)]));
-    put("bad2/app.pcap", readFixture("app.bla.pcap"));
-    const r = sanitize(join(tmp, "bad2"), join(tmp, "bad2-out"));
-    expect(readFileSync(join(tmp, "bad2-out/app.apk")).toString()).toBe("not a zip");
-    expect(readFileSync(join(tmp, "bad2-out/broken.sqlite")).equals(readFileSync(join(tmp, "bad2/broken.sqlite")))).toBe(true);
-    expect(r.actions.filter((a) => a.kind === "copied" && a.detail?.startsWith("not cleaned:")).map((a) => basename(a.path)).sort()).toEqual(["app.apk", "broken.sqlite"]);
-    expect(readFileSync(join(tmp, "bad2-out/app.pcap")).equals(readFixture("app.pcap"))).toBe(true);
+  test("Rust: a binary under the limit is untouched even when it has the decoy path", () => {
+    const bytes = rustBinary(10, 5);
+    expect(cleaned("few.elf", bytes).out.equals(bytes)).toBe(true);
   });
 });
+
+function writeBin(name: string, bytes: Buffer): string {
+  const f = join(tmp, `${n++}-${name}`);
+  writeFileSync(f, bytes);
+  return f;
+}

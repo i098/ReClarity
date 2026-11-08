@@ -13,6 +13,9 @@ import { findModelDecoys } from "./lib/model.ts";
 import { countShieldRecords } from "./lib/pcap.ts";
 import { findHoney, isSqlite } from "./lib/sqlite.ts";
 import { findSeeds, opaqueValue, parseJs, walk, type AnyNode, type Program } from "./lib/js.ts";
+import { countBeamDecoys } from "./lib/beam.ts";
+import { REA_MAX_GO_BUILDINFO, REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
+import { findWasmDecoys, parseSections } from "./lib/wasm.ts";
 
 export const BLA_VERSION = "3.1.0";
 export const REA_ASAR_DEFAULT_HEADER = 16 * 1024 * 1024;
@@ -55,12 +58,19 @@ const RULES: Record<string, { weight: number; min: number }> = {
   pcap_flood: { weight: 40, min: 1 },
   evm_trailer: { weight: 40, min: 1 },
   dart_pool_decoy: { weight: 40, min: 1 },
+  wasm_export_flood: { weight: 40, min: 1 },
+  wasm_decoy_sections: { weight: 25, min: 1 },
+  beam_chunk_flood: { weight: 40, min: 1 },
+  native_shield_trailer: { weight: 40, min: 1 },
+  rustc_hash_flood: { weight: 40, min: 1 },
+  go_buildinfo_flood: { weight: 40, min: 1 },
 };
 export const CONFIG_NAMES = [".blarc", ".blarc.json", "bla.config.json", ".bla-manifest.json"];
 const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST/g;
 const ENCLAVE = /enclave|attestation|tpm2_|nitroenclave|vsock|hardware-sealed/gi;
 const DECOY_IPC = /delegatedToEnclave\s*:\s*true|fallbackStub\s*:\s*true/g;
 const MAX_JS = 16 * 1024 * 1024;
+export const MAX_BIN = 512 * 1024 * 1024;
 const MAX_FILES = 2000;
 const MAX_ASAR_JS = 300;
 const SKIP_DIRS = ["node_modules", ".git"];
@@ -243,6 +253,34 @@ function scanData(kind: NonNullable<ReturnType<typeof dataKind>>, path: string, 
   }
 }
 
+function scanWasm(bytes: Buffer, path: string, acc: Acc): void {
+  const sections = parseSections(bytes);
+  if (!sections) return void acc.notes.push(`${path}: not a well-framed WASM module; not scanned`);
+  const d = findWasmDecoys(sections);
+  if (d.exports.length) acc.add("wasm_export_flood", `${path}: ${d.exports.length} alias exports of ${d.exportCount}`, d.exports.length);
+  if (d.sections.size) acc.add("wasm_decoy_sections", `${path}: ${[...d.sections.values()].join(", ")}`, d.sections.size);
+}
+
+function scanBeam(bytes: Buffer, path: string, acc: Acc): void {
+  const c = countBeamDecoys(bytes);
+  if (!c) return void acc.notes.push(`${path}: not a well-framed BEAM form; not scanned`);
+  if (c.decoyChunks || c.decoyAtoms) acc.add("beam_chunk_flood", `${path}: ${c.decoyChunks} decoy chunks of ${c.chunks}, ${c.decoyAtoms} canary atoms`, c.decoyChunks + c.decoyAtoms);
+}
+
+function scanNative(bytes: Buffer, path: string, acc: Acc): void {
+  const s = findSentinels(bytes);
+  const decoys = s.filter((x) => x.decoy).length;
+  if (decoys) acc.add("fuse_decoy", `${path}: ${decoys} decoys of ${s.length} sentinels (REA limit ${REA_MAX_SENTINELS})`, decoys);
+  const cut = trailerStart(bytes);
+  if (cut >= 0) acc.add("native_shield_trailer", `${path}: ${bytes.length - cut} B appended at ${cut}`);
+  const rust = rustcPaths(bytes);
+  if (rust.distinct > REA_MAX_RUSTC_HASHES) acc.add("rustc_hash_flood", `${path}: ${rust.distinct} distinct rustc paths (REA limit ${REA_MAX_RUSTC_HASHES})`, rust.distinct);
+  const dart = findDartDecoys(bytes);
+  if (dart.length) acc.add("dart_pool_decoy", `${path}: ${dart.length} Dart decoy blocks`, dart.length);
+  const go = goBuildInfos(bytes).filter(isGoFlood);
+  if (go.length) acc.add("go_buildinfo_flood", go[0]!.plantEnd >= 0 ? `${path}: BLA Go plant marker after build info at ${go[0]!.offset}` : `${path}: Go build info claims ${go[0]!.claimed} B (REA limit ${REA_MAX_GO_BUILDINFO})`, go.length);
+}
+
 function scanFile(path: string, size: number, acc: Acc): void {
   const name = basename(path);
   const ext = extname(name);
@@ -251,14 +289,9 @@ function scanFile(path: string, size: number, acc: Acc): void {
     try {
       if ("bla" in JSON.parse(readFileSync(path, "utf8"))) acc.add("config_file", `${path} ("bla" key)`);
     } catch {}
-  } else if (size >= 1 << 20 && isNativeExecutable(path)) {
-    // shortcut: reads the whole binary into memory; stream it if a 1 GB target ever shows up
-    const bin = readFileSync(path);
-    const s = findSentinels(bin);
-    const decoys = s.filter((x) => x.decoy).length;
-    if (decoys) acc.add("fuse_decoy", `${path}: ${decoys} decoys of ${s.length} sentinels (REA limit ${REA_MAX_SENTINELS})`, decoys);
-    const dart = findDartDecoys(bin);
-    if (dart.length) acc.add("dart_pool_decoy", `${path}: ${dart.length} Dart decoy blocks`, dart.length);
+  } else if (size <= MAX_BIN && isNativeExecutable(path)) {
+    // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
+    scanNative(readFileSync(path), path, acc);
   } else if (dataKind(path)) {
     try {
       scanData(dataKind(path)!, path, size, acc);
@@ -274,6 +307,10 @@ function scanFile(path: string, size: number, acc: Acc): void {
   } else if ([".js", ".cjs", ".mjs"].includes(ext)) {
     if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
     else scanJs(readFileSync(path, "utf8"), path, acc);
+  } else if (ext === ".wasm" || ext === ".beam") {
+    if (size > MAX_BIN) acc.notes.push(`${path}: over 512 MiB, skipped`);
+    else if (ext === ".wasm") scanWasm(readFileSync(path), path, acc);
+    else scanBeam(readFileSync(path), path, acc);
   }
 }
 

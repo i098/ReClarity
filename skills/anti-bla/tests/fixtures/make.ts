@@ -72,3 +72,62 @@ export function flutterLookalike(): Buffer {
   }
   return Buffer.concat([head, body]);
 }
+
+// Real BLA output, small enough to commit (BLA 3.1.0, commit 41345ff, seed "fixture-1"):
+//   tiny.wasm      hand-assembled module: add and mul over two i32
+//   tiny.bla.wasm  protectWasmBinary(tiny.wasm, { intensity: "maximum", preserveExports: ["add", "mul"] })
+//   tiny.beam      hand-assembled BEAM form: AtU8 (3 atoms), Code, StrT, ImpT, ExpT, LocT
+//   tiny.bla.beam  protectErlangBeamBuffer(tiny.beam, { intensity: "balanced" })
+//   go.elf         buildMappedGoFlutterElfFixture() from BLA: ELF64 with a .go.buildinfo and an .isolate section
+//   go.bla.elf     protectNativeBinary(go.elf, { intensity: "balanced" })
+// The oversize Go claim and the rustc flood below are rebuilt from the same BLA source shapes, because a real
+// bankrupt build is 1.1 MiB.
+
+/** Section of a WASM module. Bodies under 128 bytes, so every length is one LEB128 byte. */
+export const wasmSection = (id: number, body: Buffer): Buffer => Buffer.concat([Buffer.from([id, body.length]), body]);
+export const wasmCustom = (name: string, body = Buffer.alloc(0)): Buffer => wasmSection(0, Buffer.concat([Buffer.from([name.length]), Buffer.from(name), body]));
+
+/** `tiny.wasm` with its export section replaced: `[name, function index]` pairs, then extra sections at the end. */
+export function wasmWith(exports: [string, number][], ...after: Buffer[]): Buffer {
+  const tiny = readFixture("tiny.wasm");
+  const entries = exports.map(([n, i]) => Buffer.concat([Buffer.from([n.length]), Buffer.from(n), Buffer.from([0, i])]));
+  return Buffer.concat([tiny.subarray(0, 22), wasmSection(7, Buffer.concat([Buffer.from([exports.length]), ...entries])), tiny.subarray(37), ...after]);
+}
+
+const u32 = (n: number): Buffer => {
+  const b = Buffer.alloc(4);
+  b.writeInt32BE(n);
+  return b;
+};
+const pad4 = (b: Buffer): Buffer => Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4)]);
+export const beamChunk = (name: string, payload: Buffer): Buffer => Buffer.concat([Buffer.from(name, "latin1"), u32(payload.length), pad4(payload)]);
+/** Classic atom table: count, then a length byte and name per atom. */
+export const beamAtoms = (names: string[]): Buffer => Buffer.concat([u32(names.length), ...names.map((n) => Buffer.concat([Buffer.from([n.length]), Buffer.from(n)]))]);
+/** OTP 28 atom table: negative count, then a compact length (one byte under 16, else two bytes) and name per atom. */
+export const beamAtomsCompact = (names: string[]): Buffer =>
+  Buffer.concat([u32(-names.length), ...names.map((n) => Buffer.concat([Buffer.from(n.length < 16 ? [n.length << 4] : [((n.length >> 8) << 5) | 8, n.length & 255]), Buffer.from(n)]))]);
+export function beamForm(...chunks: Buffer[]): Buffer {
+  const body = Buffer.concat([Buffer.from("BEAM"), ...chunks]);
+  return Buffer.concat([Buffer.from("FOR1"), u32(body.length), body]);
+}
+
+/** `go.elf` with the 512-byte `.go.buildinfo` (at 1024) overwritten by BLA's bankrupt plant: header, a 1 MiB + 1 version length, marker. */
+export function goElfWithClaim(): Buffer {
+  const out = Buffer.from(readFixture("go.elf"));
+  out.fill(0, 1024, 1024 + 512);
+  const header = Buffer.alloc(32);
+  Buffer.from("ff20476f206275696c64696e663a", "hex").copy(header);
+  header[14] = 8;
+  header[15] = 2;
+  Buffer.concat([header, Buffer.from([0x81, 0x80, 0x40]), Buffer.from("\0[BLA-GO-MAPPED]\0", "latin1")]).copy(out, 1024);
+  return out;
+}
+
+/** `go.elf` followed by `/rustc/<hash>/` paths, no BLA trailer. Real paths are std ones; decoys are BLA's `enclave_guard.rs`. */
+export function rustBinary(real: number, decoys: number): Buffer {
+  const hash = (i: number) => i.toString(16).padStart(40, "a");
+  const path = (i: number, file: string) => Buffer.from(`/rustc/${hash(i)}/${file}\0`, "latin1");
+  const reals = Array.from({ length: real }, (_, i) => path(i, "library/std/src/rt.rs"));
+  const fakes = Array.from({ length: decoys }, (_, i) => path(1000 + i, "library/core/src/enclave_guard.rs"));
+  return Buffer.concat([readFixture("go.elf"), ...reals, ...fakes]);
+}

@@ -20,7 +20,7 @@ JS and Electron are built. Other formats are listed so the gap is visible.
 | BLA config files | none | `config_file` | `sanitize.ts` drops them from the copy | built |
 | Embedded source map with bait text | JS evidence | none | `fold-js.ts` strips the `sourceMappingURL` data URL after folding | built |
 | WASM, SQLite, model, Go, Rust, BEAM, PCAP caps | format inspectors | not yet | not yet | after arm C passes |
-| Runtime guard (CDP, Frida detection) | runtime capture | not yet | compare attached and not attached runs | planned |
+| Runtime guard (CDP, Frida, `--inspect` detection; self-seal `NODE_OPTIONS` digest) | runtime capture | `runtime_guard` (BLA's own markers: `inspectorObserved`, `cdpShapeBudgetGuard_`, `fridaCaptureSaturator_`, `__puppeteer_evaluation_script__`) | Not cut from the copy. `runtime-guard.ts` runs each entry in the sandbox with nothing attached (twice, to find what varies) and once per probe (`inspect`, `node-options`, `remote-debugging`, `cdp`, `frida`). It reports every channel that differs (stdout, stderr, exit, files, IPC, children, connects, added globals) and the code that ran in only one run. The not-attached run is the observation | built |
 | Python `.pyc` tarpit | PyInstaller route | not yet | `coverage.py` in the sandbox | planned |
 
 ## What stays

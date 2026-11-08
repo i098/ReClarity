@@ -16,12 +16,13 @@ export const MAX_FIXTURES = 200;
 const CAPACITY = /budget exceeded|conservatively bounded|header\/index admission is limited|maximum_[a-z_]+ \(/i;
 export const isCapacityError = (text: string): boolean => CAPACITY.test(text);
 
-/** REA's own error envelope only: stderr, or the error/message of the JSON error object on stdout. Other stdout text is target data. */
+/** REA's own error envelope only: stderr, or the JSON error object on stdout: `error`/`message` text, or `code: "resource_constraint"` (BEAM chunk budget, Go build-info limit). Other stdout text is target data. */
 export function isReaCapacityError(exitCode: number | null, stdout: string, stderr: string): boolean {
   if (exitCode === 0) return false;
   if (isCapacityError(stderr)) return true;
   try {
     const e = JSON.parse(stdout);
+    if (e?.code === "resource_constraint") return true;
     return typeof e?.error === "string" && isCapacityError(`${e.error} ${String(e.message ?? "")}`);
   } catch {
     return false;

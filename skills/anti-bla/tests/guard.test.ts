@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CoverageReport } from "../scripts/coverage.ts";
-import { MAX_FIXTURES, admit, asData, check, fixtureTargets, isCapacityError, mayRetry, newLedger } from "../scripts/guard.ts";
+import { MAX_FIXTURES, admit, asData, check, fixtureTargets, isCapacityError, isReaCapacityError, mayRetry, newLedger } from "../scripts/guard.ts";
 import { run, treeHash } from "../scripts/run.ts";
 import { FIXTURES, floodAsar } from "./fixtures/make.ts";
 
@@ -31,6 +31,14 @@ describe("retry once", () => {
     expect(isCapacityError(rea)).toBe(true);
     expect(isCapacityError("ASAR header/index admission is limited to 16 MiB.")).toBe(true);
     expect(isCapacityError("ENOENT: no such file")).toBe(false);
+  });
+
+  test("REA's resource_constraint error object (BEAM chunk budget, Go build-info limit) is a capacity error; invalid_request is not", () => {
+    const beam = JSON.stringify({ code: "resource_constraint", category: "resource_constraint", message: "BEAM form exceeds the 64-chunk budget." });
+    const go = JSON.stringify({ code: "invalid_request", category: "invalid_input", message: "Analysis input is invalid." });
+    expect(isReaCapacityError(1, beam, "")).toBe(true);
+    expect(isReaCapacityError(1, go, "")).toBe(false);
+    expect(isReaCapacityError(0, beam, "")).toBe(false);
   });
 
   test("one retry on a different input; never the same input; never a second retry", () => {
@@ -124,7 +132,7 @@ describe("run wrapper", () => {
     writeFileSync(asar, floodAsar(150));
     const r = run(asar, { work: join(tmp, "w6a"), coverage: true });
     expect(r.verdict).toBe("cleaned");
-    expect(r.notes).toEqual(["coverage skipped: an ASAR is not executable by node"]);
+    expect(r.notes).toEqual(["coverage skipped: node runs plain JS only, not an ASAR, WASM, BEAM or native binary"]);
   });
 
   test("a second run in the same work dir does not keep files of the first", () => {

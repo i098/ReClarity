@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foldJs, foldPath } from "../scripts/fold-js.ts";
-import { buildAsar } from "../scripts/lib/asar.ts";
+import { buildAsar, openAsar } from "../scripts/lib/asar.ts";
 import { scan } from "../scripts/scan.ts";
 import { readFixture } from "./fixtures/make.ts";
 
@@ -87,4 +87,30 @@ test("foldPath copies an ASAR with a bad entry unchanged instead of aborting", (
   writeFileSync(src, buildAsar([{ path: "a.js", node: { size: 2 ** 40, offset: "0" } }]));
   foldPath(src, join(tmp, "bad-out.asar"));
   expect(readFileSync(join(tmp, "bad-out.asar")).equals(readFileSync(src))).toBe(true);
+});
+
+test("one unparseable entry does not stop the rest of the ASAR from folding", () => {
+  const src = join(tmp, "mixed.asar");
+  writeFileSync(src, buildAsar([
+    { path: "main.js", node: {}, data: readFixture("main.bla.js") },
+    { path: "bad.js", node: {}, data: Buffer.from("this is { not js") },
+  ]));
+  const rep = foldPath(src, join(tmp, "mixed-out.asar"));
+  expect(rep.files.map((f) => f.path)).toEqual([`${src}!main.js`]);
+  expect(rep.notes.join("\n")).toContain("bad.js");
+  const out = openAsar(join(tmp, "mixed-out.asar"));
+  expect(out.read(out.files.find((f) => f.path === "bad.js")!).toString()).toBe("this is { not js");
+  expect(out.read(out.files.find((f) => f.path === "main.js")!).length).toBeLessThan(readFixture("main.bla.js").length / 10);
+  out.close();
+});
+
+test("an unparseable .js in a directory is kept and noted, not fatal", () => {
+  const d = join(tmp, "bad-dir");
+  mkdirSync(d);
+  writeFileSync(join(d, "bad.js"), "this is { not js");
+  writeFileSync(join(d, "main.js"), readFixture("main.bla.js"));
+  const rep = foldPath(d, join(tmp, "bad-dir-out"));
+  expect(readFileSync(join(tmp, "bad-dir-out", "bad.js"), "utf8")).toBe("this is { not js");
+  expect(rep.notes.join("\n")).toContain("bad.js");
+  expect(rep.files.map((f) => f.path)).toEqual([join(d, "main.js")]);
 });

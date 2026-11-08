@@ -81,6 +81,17 @@ const isJs = (p: string) => [".js", ".cjs", ".mjs"].includes(extname(p));
 export interface FoldReport {
   tool: "anti-bla/fold-js";
   files: { path: string; stats: FoldStats }[];
+  /** Files left unfolded, with the reason. */
+  notes: string[];
+}
+
+function tryFold(label: string, code: string, flag: SeedFlag, rep: FoldReport): FoldResult | undefined {
+  try {
+    return foldJs(code, flag);
+  } catch (e) {
+    rep.notes.push(`${label}: not folded, ${e instanceof Error ? e.message : String(e)}`);
+    return undefined;
+  }
 }
 
 function foldTree(src: string, dst: string, flag: SeedFlag, rep: FoldReport): void {
@@ -101,28 +112,30 @@ function foldTree(src: string, dst: string, flag: SeedFlag, rep: FoldReport): vo
       const entries = asar.files.map((f) => {
         const data = f.node.unpacked || f.node.link !== undefined ? undefined : asar!.read(f);
         if (!data || !isJs(f.path) || f.path.includes("node_modules/")) return { path: f.path, node: f.node, data };
-        const r = foldJs(data.toString("utf8"), flag);
-        if (!r.stats.predicatesFolded && !r.stats.branchesDropped) return { path: f.path, node: f.node, data };
+        const r = tryFold(`${src}!${f.path}`, data.toString("utf8"), flag, rep);
+        if (!r || (!r.stats.predicatesFolded && !r.stats.branchesDropped)) return { path: f.path, node: f.node, data };
         folded.push({ path: `${src}!${f.path}`, stats: r.stats });
         const { integrity: _stale, ...node } = f.node as typeof f.node & { integrity?: unknown };
         return { path: f.path, node, data: Buffer.from(r.code) };
       });
       writeFileSync(dst, buildAsar(entries));
       rep.files.push(...folded);
-    } catch {
-      copyFileSync(src, dst); // not a readable archive: nothing to fold
+    } catch (e) {
+      rep.notes.push(`${src}: archive not folded, ${e instanceof Error ? e.message : String(e)}`);
+      copyFileSync(src, dst);
     } finally {
       asar?.close();
     }
   } else if (isJs(src)) {
-    const r = foldJs(readFileSync(src, "utf8"), flag);
-    writeFileSync(dst, r.code);
-    rep.files.push({ path: src, stats: r.stats });
+    const text = readFileSync(src, "utf8");
+    const r = tryFold(src, text, flag, rep);
+    writeFileSync(dst, r?.code ?? text);
+    if (r) rep.files.push({ path: src, stats: r.stats });
   } else copyFileSync(src, dst);
 }
 
 export function foldPath(src: string, dst: string, flag: SeedFlag = 1): FoldReport {
-  const rep: FoldReport = { tool: "anti-bla/fold-js", files: [] };
+  const rep: FoldReport = { tool: "anti-bla/fold-js", files: [], notes: [] };
   foldTree(src, dst, flag, rep);
   return rep;
 }

@@ -24,11 +24,14 @@ BLA makes a build hard to read for an AI agent. It plants decoy code, floods REA
 ## Install
 
 ```bash
-bun install                          # at the repo root, for the tests
-bun install --cwd skills/anti-bla    # pins acorn for the skill
+npx skills add i098/ReClarity --skill anti-bla
 ```
 
-Copy `skills/anti-bla` into your agent's skills folder, then run `bun install` inside it. Requires [Bun](https://bun.sh). The coverage step also needs `bwrap`.
+After install, run `bun install` in the installed `anti-bla` folder. It pins `acorn`.
+
+Requires [Bun](https://bun.sh). The coverage step also needs `bwrap`.
+
+For the tests, run `bun install` at the repo root, then `bun test`.
 
 ## Run
 

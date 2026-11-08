@@ -9,7 +9,7 @@ Source: [architecture.mmd](architecture.mmd). Re-render with `ondine docs/archit
 | Scan | `scripts/scan.ts` | JSON report; reads only |
 | Sanitize | `scripts/sanitize.ts` | clean copy (ASAR, fuses, config files) |
 | Fold | `scripts/fold-js.ts` | copy with folded predicates and pruned dead code |
-| Coverage | `scripts/coverage.ts` | JSON live set; optional copy plus `quarantine.json` |
+| Coverage | `scripts/coverage.ts` | JSON live set; optional copy plus `<copy>.quarantine.json` beside it |
 | Guard | `scripts/guard.ts` | `ledger.json`: tokens, start time, tried input hashes, retry flag |
 | Wrapper | `scripts/run.ts` | work folder with `a-*` and `b-*` copies, JSON run report |
 

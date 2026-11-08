@@ -6,7 +6,7 @@ Run on 2026-11-08 on this host. Tool: `skills/anti-bla/scripts/bench.ts`.
 
 - **Fixture is real BLA output.** BLA 3.1.0 (`bla-agents`, commit `41345ff`) was built locally. A small Electron-style app (`tiny-notes`: `slugify`, `wordCount`, `checkLicense`, `rareExport`, preload with two IPC channels) was packed to ASAR and hardened with `bla protect --intensity bankrupt --seed fixture-1`.
 - **REA** 6.8.0, built locally. Same command for every arm: `rea analyze-javascript-application <asar> --format json`.
-- **Arms.** A: plain app. B: BLA-hardened app. C: the hardened app after `run.ts` (scan, sanitize, fold-js, coverage guards) cleaned a copy. The clean time is added to arm C.
+- **Arms.** A: plain app. B: BLA-hardened app. C: the hardened app after `bench.ts` cleaned a copy (sanitize and fold-js; no coverage, because coverage does not cover ASAR). The clean time is added to arm C.
 - **Facts.** `notes:save`, `notes:count`, `PRO`: literals that BLA's renaming keeps. Function names are not used, because BLA renames them in every arm.
 - 3 runs per arm. Numbers do not change between runs except wall time.
 

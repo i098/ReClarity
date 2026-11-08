@@ -56,19 +56,47 @@ const isNum = (x: Node, v?: number): boolean => {
   return n.type === "Literal" && typeof n.value === "number" && (v === undefined || n.value === v);
 };
 
+function patternNames(p: AnyNode | null | undefined, out: string[]): void {
+  if (!p) return;
+  if (p.type === "Identifier") out.push(p.name);
+  else if (p.type === "ObjectPattern") for (const q of p.properties) patternNames(q.type === "RestElement" ? q.argument : q.value, out);
+  else if (p.type === "ArrayPattern") for (const e of p.elements) patternNames(e, out);
+  else if (p.type === "AssignmentPattern") patternNames(p.left, out);
+  else if (p.type === "RestElement") patternNames(p.argument, out);
+}
+
+/** Names bound more than once anywhere in the file (shadowing, redeclaration). Name-only analysis must not trust them. */
+export function reboundNames(program: Program): Set<string> {
+  const names: string[] = [];
+  walk(program, (n) => {
+    if (n.type === "VariableDeclarator") patternNames(n.id, names);
+    else if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression" || n.type === "ArrowFunctionExpression") {
+      for (const p of n.params) patternNames(p, names);
+      if (n.type !== "ArrowFunctionExpression") patternNames(n.id, names);
+    } else if (n.type === "ClassDeclaration" || n.type === "ClassExpression") patternNames(n.id, names);
+    else if (n.type === "CatchClause") patternNames(n.param, names);
+    else if (n.type === "ImportSpecifier" || n.type === "ImportDefaultSpecifier" || n.type === "ImportNamespaceSpecifier") names.push(n.local.name);
+  });
+  const seen = new Set<string>();
+  const twice = new Set<string>();
+  for (const x of names) (seen.has(x) ? twice : seen).add(x);
+  return twice;
+}
+
 /**
- * Top-level seed constants. Shapes seen in BLA 3.1.0:
+ * Top-level `const` seed constants whose name is bound once in the file. Shapes seen in BLA 3.1.0:
  *   const S = 4098631152 | (digest(0) === K ? 1 : 0)    integrity-entangled
  *   const S = (process.pid & 0xff : 42) | 1             any odd value
- * Unknown shapes return no seed, so nothing is folded for them.
+ * Unknown shapes, `let`/`var`, and names bound more than once return no seed, so nothing is folded for them.
  */
 export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
   const seeds: Seed[] = [];
+  const rebound = reboundNames(program);
   for (const st of program.body) {
-    if (st.type !== "VariableDeclaration") continue;
+    if (st.type !== "VariableDeclaration" || st.kind !== "const") continue;
     for (const d of st.declarations) {
       const init = d.init;
-      if (d.id.type !== "Identifier" || !init || init.type !== "BinaryExpression" || init.operator !== "|") continue;
+      if (d.id.type !== "Identifier" || rebound.has(d.id.name) || !init || init.type !== "BinaryExpression" || init.operator !== "|") continue;
       const { left, right } = init;
       if (left.type === "Literal" && typeof left.value === "number" && right.type === "ConditionalExpression" && isNum(right.consequent, 1) && isNum(right.alternate, 0)) {
         const lo = left.value | 0;

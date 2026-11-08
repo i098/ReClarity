@@ -74,6 +74,13 @@ describe("fold-js keeps behavior it cannot prove unchanged", () => {
     expect(load(foldJs(code2).code).ready!()).toBe(true);
   });
 
+  test("a name that is rebound or not const is never treated as a seed", () => {
+    const shadowed = "const flags = Number(process.argv[2]) | 1;\nfunction check(flags) { if ((flags & 1) === 1) return 'odd'; return 'even'; }\nmodule.exports = { check };\n";
+    expect(load(foldJs(shadowed).code).check!(2)).toBe("even");
+    const reassigned = "let h = 7 | 1;\nh = h + 1;\nfunction f() { if ((h & 1) === 0) return 'even'; return 'odd'; }\nmodule.exports = { f };\n";
+    expect(load(foldJs(reassigned).code).f!()).toBe("even");
+  });
+
   test("a classic script keeps its top-level declarations, which other scripts may call", () => {
     const code = `${seed}function onSave() { return 1; }\nfunction helper() { return 2; }\n`;
     const out = foldJs(code).code;

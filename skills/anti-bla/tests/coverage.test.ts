@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coverage, quarantineCopy } from "../scripts/coverage.ts";
@@ -38,7 +38,8 @@ describe.skipIf(!sandboxWorks)("coverage", () => {
     expect(quarantineCopy(f, r, out).removed).toBe(2); // shadow + its keep-alive line
     const copy = readFileSync(join(out, "main.js"), "utf8");
     expect(copy).not.toContain("shadow");
-    expect(readFileSync(join(out, "quarantine.json"), "utf8")).toContain("ENCLAVE-ATTESTATION-GUARD");
+    expect(readdirSync(out)).toEqual(["main.js"]); // nothing REA could read in the copy carries the bait
+    expect(readFileSync(`${out}.quarantine.json`, "utf8")).toContain("ENCLAVE-ATTESTATION-GUARD");
     expect(readFileSync(f, "utf8")).toContain("shadow"); // original untouched
     expect(Bun.spawnSync(["node", "-e", `console.log(require(${JSON.stringify(join(out, "main.js"))}).realRare())`]).stdout.toString()).toContain("real ticket");
   });
@@ -61,6 +62,24 @@ process.exit(leaked);
     const r = coverage(f);
     delete process.env.ANTI_BLA_TEST_SECRET;
     expect(r.exitCode).toBe(0);
+  });
+
+  test("coverage files the target plants (links, bad JSON) are ignored, not read or fatal", () => {
+    const hostFile = join(tmp, "host-only.json");
+    writeFileSync(hostFile, "{ not json s3cret");
+    const f = app(
+      "plant",
+      `const fs = require("fs");
+fs.symlinkSync(${JSON.stringify(hostFile)}, "/cov/x.json");
+fs.writeFileSync("/cov/y.json", "{\\"result\\": 5}");
+fs.writeFileSync("/cov/z.json", "not json");
+fs.writeFileSync("/cov/w.json", "{\\"result\\":[{}]}");
+fs.writeFileSync("/cov/v.json", "{\\"result\\":[{\\"url\\":\\"file:///app/main.js\\"}]}");
+module.exports = 1;
+`,
+    );
+    const r = coverage(f);
+    expect(r.files[0]!.file).toBe("main.js");
   });
 
   test("a target that never ends is killed at the time limit", () => {

@@ -81,7 +81,7 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
       const secondHash = treeHash(second);
       if (ledger.tried.includes(inputHash(secondHash))) {
         rep.verdict = "rea-failed";
-        rep.reason = `capacity error; cleaning changed nothing, so the same input is not retried${opts.coverage ? "" : ". Add --coverage to prune decoy suspects"}`;
+        rep.reason = `capacity error; cleaning changed nothing, so the same input is not retried${opts.coverage || target.endsWith(".asar") ? "" : ". Add --coverage to prune decoy suspects"}`;
       } else {
         const v = mayRetry(ledger, secondHash);
         if (v.ok && check(ledger).ok) {

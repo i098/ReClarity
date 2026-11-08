@@ -3,7 +3,7 @@
 // run / not run / decoy suspect. Nothing is deleted from the original.
 //   not run       never executed in this run. May be rare-input logic: kept.
 //   decoy suspect not run AND carries BLA trap words. Removed from the --out copy only, and
-//                 saved whole in quarantine.json, so it can be put back.
+//                 saved whole in <out>.quarantine.json (beside the copy), so it can be put back.
 //   bait that ran carries trap words but executed: listed, never an Observation, kept.
 // Target code is untrusted: it runs only inside bwrap on this host (no network, no home,
 // no secrets in env, read-only root, time limit). Without bwrap the tool refuses.
@@ -101,19 +101,28 @@ interface V8Script {
 function loadCounts(covDir: string, size: Map<string, number>): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
   for (const f of readdirSync(covDir)) {
-    if (!f.endsWith(".json")) continue;
-    const file: { result: V8Script[] } = JSON.parse(readFileSync(join(covDir, f), "utf8")); // V8 writes this shape
-    const scripts = file.result;
-    for (const s of scripts) {
-      if (!s.url.startsWith(`file://${SANDBOX_DIR}/`)) continue;
-      const rel = s.url.slice(`file://${SANDBOX_DIR}/`.length);
-      const len = size.get(rel);
-      if (len === undefined) continue;
-      const hit = new Uint8Array(len);
-      const ranges = s.functions.flatMap((fn) => fn.ranges).sort((x, y) => x.startOffset - y.startOffset || y.endOffset - x.endOffset);
-      for (const r of ranges) hit.fill(r.count > 0 ? 1 : 0, r.startOffset, Math.min(r.endOffset, len));
+    if (!f.endsWith(".json") || !lstatSync(join(covDir, f)).isFile()) continue; // the sandbox writes here: never follow a link out of it
+    const mine = new Map<string, Uint8Array>();
+    try {
+      const file: { result?: unknown } = JSON.parse(readFileSync(join(covDir, f), "utf8"));
+      for (const s of file.result as V8Script[]) {
+        if (!s.url.startsWith(`file://${SANDBOX_DIR}/`)) continue;
+        const rel = s.url.slice(`file://${SANDBOX_DIR}/`.length);
+        const len = size.get(rel);
+        if (len === undefined) continue;
+        const hit = mine.get(rel) ?? new Uint8Array(len);
+        const ranges = s.functions.flatMap((fn) => fn.ranges).sort((x, y) => x.startOffset - y.startOffset || y.endOffset - x.endOffset);
+        const layer = new Uint8Array(len);
+        for (const r of ranges) layer.fill(r.count > 0 ? 1 : 0, r.startOffset, Math.min(r.endOffset, len));
+        for (let i = 0; i < len; i++) hit[i] = (hit[i] ?? 0) | (layer[i] ?? 0);
+        mine.set(rel, hit);
+      }
+    } catch {
+      continue; // a file the target planted, not V8's output
+    }
+    for (const [rel, hit] of mine) {
       const prev = out.get(rel);
-      if (prev) for (let i = 0; i < len; i++) prev[i] = (prev[i] ?? 0) | (hit[i] ?? 0);
+      if (prev) for (let i = 0; i < hit.length; i++) prev[i] = (prev[i] ?? 0) | (hit[i] ?? 0);
       else out.set(rel, hit);
     }
   }
@@ -177,7 +186,7 @@ export function coverage(target: string, opts: RunOptions = {}): CoverageReport 
   }
 }
 
-/** Copy `target` to `out`, minus decoy-suspect statements; they go whole into quarantine.json (written only when there are any). */
+/** Copy `target` to `out`, minus decoy-suspect statements; they go whole into `<out>.quarantine.json`, beside the copy and never inside it (written only when there are any). */
 export function quarantineCopy(target: string, report: CoverageReport, out: string): { removed: number } {
   const abs = resolve(target);
   const isDir = statSync(abs).isDirectory();
@@ -194,7 +203,7 @@ export function quarantineCopy(target: string, report: CoverageReport, out: stri
     mkdirSync(dirname(join(out, f.file)), { recursive: true });
     writeFileSync(join(out, f.file), src);
   }
-  if (quarantine.length) writeFileSync(join(out, "quarantine.json"), JSON.stringify(quarantine, null, 2));
+  if (quarantine.length) writeFileSync(`${resolve(out)}.quarantine.json`, JSON.stringify(quarantine, null, 2));
   return { removed: quarantine.length };
 }
 

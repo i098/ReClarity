@@ -2,7 +2,7 @@
 // Roots are every statement that is not a plain declaration. A declaration is removed only when no
 // root reaches it. Sink calls (a call whose only effect is mutating private state nobody else reads)
 // are removed first, so the state and the function become unreachable too.
-import { kids, parseJs, walk, type AnyNode, type Program, type Seed } from "./js.ts";
+import { kids, parseJs, reboundNames, walk, type AnyNode, type Program, type Seed } from "./js.ts";
 
 export interface PruneStats {
   declarationsRemoved: number;
@@ -144,9 +144,9 @@ function sinkCall(st: AnyNode): string | undefined {
  * state; that state is used by sinks only; and every use of F outside the set is a droppable
  * call statement (so dropping all of them leaves F unreachable).
  */
-function findSinks(decls: Decl[], roots: AnyNode[]): Set<string> {
-  const fns = new Set(decls.filter((d) => d.isFn).map((d) => d.name));
-  const states = new Set(decls.filter((d) => d.isState).map((d) => d.name));
+function findSinks(decls: Decl[], roots: AnyNode[], rebound: Set<string>): Set<string> {
+  const fns = new Set(decls.filter((d) => d.isFn && !rebound.has(d.name)).map((d) => d.name));
+  const states = new Set(decls.filter((d) => d.isState && !rebound.has(d.name)).map((d) => d.name));
   const callsTo = (node: AnyNode, name: string) => (sinkCall(node) === name ? 1 : 0) + bodies(node).flat().filter((st) => sinkCall(st) === name).length;
   for (let changed = true; changed; ) {
     changed = false;
@@ -200,7 +200,7 @@ export function pruneJs(src: string, seeds: Seed[]): { code: string; stats: Prun
   const stats: PruneStats = { declarationsRemoved: cuts.length, sinkCallsRemoved: 0 };
   const ast = parseJs(code);
   const { decls, roots } = classify(ast, seedNames);
-  const sinks = findSinks(decls, roots);
+  const sinks = findSinks(decls, roots, reboundNames(ast));
   cuts = bodies(ast).flat().filter((st) => sinks.has(sinkCall(st) ?? "")).map((st) => [st.start, st.end]);
   stats.sinkCallsRemoved = cuts.length;
   code = applyCuts(code, cuts);

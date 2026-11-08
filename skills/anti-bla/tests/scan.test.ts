@@ -61,6 +61,12 @@ describe("scan", () => {
     expect(r.findings.find((x) => x.id === "fuse_decoy")!.count).toBe(34);
   });
 
+  test("fuse decoys in a native executable named .bin are reported", () => {
+    const f = join(tmp, "tool.bin");
+    writeFileSync(f, fuseBinary(34));
+    expect(scan(f).findings.find((x) => x.id === "fuse_decoy")!.count).toBe(34);
+  });
+
   test("a binary with only the real fuse block is clean", () => {
     const f = join(tmp, "electron-real");
     writeFileSync(f, fuseBinary(0));

@@ -30,6 +30,10 @@ describe("retry once", () => {
   test("real REA limit messages count as capacity errors; other errors do not", () => {
     expect(isCapacityError(rea)).toBe(true);
     expect(isCapacityError("ASAR header/index admission is limited to 16 MiB.")).toBe(true);
+    expect(isCapacityError("Safetensors JSON nesting exceeds 32 levels")).toBe(true);
+    expect(isCapacityError("GGUF metadata nesting exceeds 32 array frames")).toBe(true);
+    expect(isCapacityError("Snapshot hash candidates exceed the retained evidence budget")).toBe(true);
+    expect(isCapacityError("Selected artifact exceeds 4194304 bytes: /x/a.hex")).toBe(true);
     expect(isCapacityError("ENOENT: no such file")).toBe(false);
   });
 

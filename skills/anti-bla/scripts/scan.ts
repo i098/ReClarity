@@ -4,8 +4,14 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { openAsar } from "./lib/asar.ts";
+import { findApkDecoys, findDartDecoys } from "./lib/dart.ts";
+import { cleanEvm, cleanEvmHex } from "./lib/evm.ts";
+import { MAX_APK_FILE, MAX_EVM_FILE, MAX_PCAP_FILE, dataKind } from "./lib/formats.ts";
 import { REA_MAX_SENTINELS, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
 import { countStrongMarkers } from "./lib/guard-markers.ts";
+import { findModelDecoys } from "./lib/model.ts";
+import { countShieldRecords } from "./lib/pcap.ts";
+import { findHoney, isSqlite } from "./lib/sqlite.ts";
 import { findSeeds, opaqueValue, parseJs, walk, type AnyNode, type Program } from "./lib/js.ts";
 import { countBeamDecoys } from "./lib/beam.ts";
 import { REA_MAX_GO_BUILDINFO, REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
@@ -48,6 +54,11 @@ const RULES: Record<string, { weight: number; min: number }> = {
   runtime_guard: { weight: 10, min: 1 },
   bait_text: { weight: 15, min: 1 },
   enclave_words: { weight: 5, min: 10 },
+  sqlite_honey: { weight: 40, min: 1 },
+  model_nesting_breaker: { weight: 40, min: 1 },
+  pcap_flood: { weight: 40, min: 1 },
+  evm_trailer: { weight: 40, min: 1 },
+  dart_pool_decoy: { weight: 40, min: 1 },
   wasm_export_flood: { weight: 40, min: 1 },
   wasm_decoy_sections: { weight: 25, min: 1 },
   beam_chunk_flood: { weight: 40, min: 1 },
@@ -224,6 +235,42 @@ function scanAsar(path: string, acc: Acc): void {
   }
 }
 
+/** Data formats: SQLite, model files, PCAP, EVM bytecode, Flutter APK. Read-only; each cleaner checks magic and shape itself. */
+function scanData(kind: NonNullable<ReturnType<typeof dataKind>>, path: string, size: number, acc: Acc): void {
+  switch (kind) {
+    case "sqlite": {
+      if (!isSqlite(path)) return;
+      const h = findHoney(path);
+      acc.add("sqlite_honey", `${path}: ${h.tables.length} honey tables${h.view ? " and view" : ""}`, h.tables.length + (h.view ? 1 : 0));
+      if (h.suspects.length) acc.notes.push(`${path}: tables with "enclave_" in the name kept (not BLA's shape): ${h.suspects.join(", ")}`);
+      return;
+    }
+    case "model": {
+      const d = findModelDecoys(path);
+      if (d?.remove.length) acc.add("model_nesting_breaker", `${path}: ${d.format}, nesting ${d.depth} (REA limit 32), ${d.remove.length} entries`, d.remove.length);
+      return;
+    }
+    case "pcap": {
+      if (size > MAX_PCAP_FILE) return void acc.notes.push(`${path}: over 512 MiB, not scanned`);
+      const n = countShieldRecords(readFileSync(path));
+      acc.add("pcap_flood", `${path}: ${n} BLA records`, n);
+      return;
+    }
+    case "evm": {
+      if (size > MAX_EVM_FILE) return;
+      const buf = readFileSync(path);
+      const hex = cleanEvmHex(buf.toString("latin1"));
+      const r = hex ?? cleanEvm(buf);
+      if (r) acc.add("evm_trailer", `${path}: ${r.trailerBytes} B trailer, ${r.fillerBytes} B filler${hex ? " (hex)" : ""}`);
+      return;
+    }
+    case "apk": {
+      if (size > MAX_APK_FILE) return void acc.notes.push(`${path}: over 1 GiB, not scanned`);
+      for (const f of findApkDecoys(readFileSync(path))) acc.add("dart_pool_decoy", `${path}!${f.lib}: ${f.decoys.length} Dart decoy blocks`, f.decoys.length);
+    }
+  }
+}
+
 function scanWasm(bytes: Buffer, path: string, acc: Acc): void {
   const sections = parseSections(bytes);
   if (!sections) return void acc.notes.push(`${path}: not a well-framed WASM module; not scanned`);
@@ -246,6 +293,8 @@ function scanNative(bytes: Buffer, path: string, acc: Acc): void {
   if (cut >= 0) acc.add("native_shield_trailer", `${path}: ${bytes.length - cut} B appended at ${cut}`);
   const rust = rustcPaths(bytes);
   if (rust.distinct > REA_MAX_RUSTC_HASHES) acc.add("rustc_hash_flood", `${path}: ${rust.distinct} distinct rustc paths (REA limit ${REA_MAX_RUSTC_HASHES})`, rust.distinct);
+  const dart = findDartDecoys(bytes);
+  if (dart.length) acc.add("dart_pool_decoy", `${path}: ${dart.length} Dart decoy blocks`, dart.length);
   const go = goBuildInfos(bytes).filter(isGoFlood);
   if (go.length) acc.add("go_buildinfo_flood", go[0]!.plantEnd >= 0 ? `${path}: BLA Go plant marker after build info at ${go[0]!.offset}` : `${path}: Go build info claims ${go[0]!.claimed} B (REA limit ${REA_MAX_GO_BUILDINFO})`, go.length);
 }
@@ -258,6 +307,17 @@ function scanFile(path: string, size: number, acc: Acc): void {
     try {
       if ("bla" in JSON.parse(readFileSync(path, "utf8"))) acc.add("config_file", `${path} ("bla" key)`);
     } catch {}
+  } else if (size <= MAX_BIN && isNativeExecutable(path)) {
+    // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
+    const bin = readFileSync(path);
+    if (bin.subarray(-65536).includes(PYINSTALLER_COOKIE)) acc.notes.push(`${path}: PyInstaller archive; its .pyc files are not read or cleaned. Clean the .py files before bundling, or extract it and run this on the .pyc files`);
+    scanNative(bin, path, acc);
+  } else if (dataKind(path)) {
+    try {
+      scanData(dataKind(path)!, path, size, acc);
+    } catch (e) {
+      acc.notes.push(`${path}: not scanned, ${e instanceof Error ? e.message : String(e)}`);
+    }
   } else if (ext === ".asar") {
     try {
       scanAsar(path, acc);
@@ -277,11 +337,6 @@ function scanFile(path: string, size: number, acc: Acc): void {
     if (size > MAX_BIN) acc.notes.push(`${path}: over 512 MiB, skipped`);
     else if (ext === ".wasm") scanWasm(readFileSync(path), path, acc);
     else scanBeam(readFileSync(path), path, acc);
-  } else if (size <= MAX_BIN && isNativeExecutable(path)) {
-    // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
-    const bin = readFileSync(path);
-    if (bin.subarray(-65536).includes(PYINSTALLER_COOKIE)) acc.notes.push(`${path}: PyInstaller archive; its .pyc files are not read or cleaned. Clean the .py files before bundling, or extract it and run this on the .pyc files`);
-    scanNative(bin, path, acc);
   }
 }
 

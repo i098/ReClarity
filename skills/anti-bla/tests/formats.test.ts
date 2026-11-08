@@ -137,10 +137,18 @@ describe("Go and Rust binaries", () => {
     expect(c.out.subarray(1536).equals(bytes.subarray(1536))).toBe(true);
   });
 
-  test("Go: a real build info with a small claim stays", () => {
-    const plain = readFixture("go.elf");
-    const c = cleaned("go.elf", plain);
-    expect(c.out.equals(plain)).toBe(true);
+  test("Go: a real build info without BLA's marker stays", () => {
+    const bytes = Buffer.from(readFixture("go.elf"));
+    const version = "go1.22.5";
+    const mod = "path\texample.com/app\nbuild\t-compiler=gc\n";
+    const header = Buffer.alloc(32);
+    Buffer.from("ff20476f206275696c64696e663a", "hex").copy(header);
+    header[14] = 8;
+    header[15] = 2;
+    Buffer.concat([header, Buffer.from([version.length]), Buffer.from(version), Buffer.from([mod.length]), Buffer.from(mod)]).copy(bytes, 1024);
+    expect(goBuildInfos(bytes).map((g) => g.plantEnd)).toEqual([-1]);
+    expect(ids(scan(writeBin("real-go.elf", bytes)))).not.toContain("go_buildinfo_flood");
+    expect(cleaned("real-go.elf", bytes).out.equals(bytes)).toBe(true);
   });
 
   test("Rust: decoy hashes past REA's 64 are zeroed, real compiler paths stay", () => {

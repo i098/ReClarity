@@ -86,8 +86,8 @@ function sanitizeBinary(src: string, dst: string, r: SanitizeReport): void {
     bytes = bytes.subarray(0, cut);
   }
   const fuses = findSentinels(bytes).filter((s) => s.decoy);
-  // the planted header, length and marker; the real build info was overwritten by BLA and is not recoverable
-  const go = goBuildInfos(bytes).filter((g) => isGoFlood(g) && g.plantEnd >= 0);
+  // the planted header, strings and marker. BLA clears the section before it plants, so any real build info there is not restored.
+  const go = goBuildInfos(bytes).filter(isGoFlood).filter((g) => g.plantEnd >= 0);
   const rustFlood = rustcPaths(bytes);
   const rust = rustFlood.distinct > REA_MAX_RUSTC_HASHES ? rustFlood.decoyOffsets : [];
   // zero only the decoy marker, hash or plant: REA no longer sees it
@@ -100,7 +100,7 @@ function sanitizeBinary(src: string, dst: string, r: SanitizeReport): void {
     closeSync(fd);
   }
   if (fuses.length) r.actions.push({ kind: "fuse-decoys-zeroed", path: src, detail: `${fuses.length} decoy sentinels zeroed` });
-  if (go.length) r.actions.push({ kind: "go-buildinfo-plant-zeroed", path: src, detail: `${go.length} oversize build-info claim zeroed; the original build info is gone` });
+  if (go.length) r.actions.push({ kind: "go-buildinfo-plant-zeroed", path: src, detail: `${go.length} BLA build-info plant zeroed; real build info that BLA overwrote is not restored` });
   if (rust.length) r.actions.push({ kind: "rustc-decoys-zeroed", path: src, detail: `${rust.length} decoy rustc hashes zeroed of ${rustFlood.distinct}` });
 }
 

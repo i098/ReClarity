@@ -31,7 +31,7 @@ Arm C is not equal to arm A:
 ## Not run
 
 - No agent (Claude/Codex) was run on the evidence. "Attacker tokens" and "hidden-test accuracy" from the plan are not measured. Evidence tokens above are REA's own `--token-count`.
-- Other formats (WASM, SQLite, Python, Go, Rust, BEAM, PCAP) are out of scope.
+- Other formats (WASM, SQLite, Go, Rust, BEAM, PCAP) are out of scope.
 - One fixture and one BLA seed. Fuses ran on a hand-made fake Electron binary with BLA's fuse decoy shapes, not a real Electron build.
 - The 300k token cap and 30 minute cap are starting values. Arm C used 618k evidence tokens, which a 300k cap would reject; tune it from more runs.
 

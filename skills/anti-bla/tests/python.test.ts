@@ -55,11 +55,6 @@ describe("scan: Python shapes", () => {
     expect(r.notes.join(" ")).toContain("PyInstaller");
   });
 
-  test("the stem list in pytarpit.ts is the one pycclean.py uses", () => {
-    const py = readFileSync(join(import.meta.dir, "../scripts/lib/pycclean.py"), "utf8");
-    const stems = py.match(/STEMS = \(([\s\S]*?)\)\.split\(\)/)![1]!.match(/[a-z_]+/g)!.flatMap((w) => w.split(" "));
-    expect([...stems].sort()).toEqual([...PYC_STEMS].sort());
-  });
 });
 
 describe.skipIf(!sandboxWorks)("coverage.py tarpit", () => {
@@ -196,6 +191,24 @@ describe.skipIf(!sandboxWorks)(".pyc decoys", () => {
     if (r.kind !== "cleaned") throw new Error(r.why);
     expect(r.removed).toEqual([]);
     expect(runPy(py, join(tmp, "named.out.pyc"))).toBe("ran\n");
+  });
+
+  test("every stem in PYC_STEMS names a removable decoy for the cleaner", () => {
+    const py = Bun.which("python3")!;
+    const mk = [
+      "import sys, marshal, importlib.util",
+      "stems = sys.argv[2:]",
+      "d = compile('None', 'd', 'exec')",
+      "m = compile('print(\"ran\")', 'm', 'exec')",
+      "decoys = [d.replace(co_name=s + '_1234', **({'co_qualname': s + '_1234'} if hasattr(d, 'co_qualname') else {})) for s in stems]",
+      "m = m.replace(co_consts=m.co_consts + tuple(decoys))",
+      "open(sys.argv[1], 'wb').write(importlib.util.MAGIC_NUMBER + b'\\0' * 12 + marshal.dumps(m))",
+    ].join("\n");
+    expect(Bun.spawnSync([py, "-I", "-c", mk, join(tmp, "stems.pyc"), ...PYC_STEMS]).exitCode).toBe(0);
+    const r = cleanPyc(join(tmp, "stems.pyc"), join(tmp, "stems.out.pyc"));
+    if (r.kind !== "cleaned") throw new Error(r.why);
+    expect([...r.removed].sort()).toEqual(PYC_STEMS.map((s) => `${s}_1234`).sort());
+    expect(runPy(py, join(tmp, "stems.out.pyc"))).toBe("ran\n");
   });
 
   test("sanitize cleans BLA .pyc files in a folder, copies the plain one byte for byte, leaves the original alone", () => {

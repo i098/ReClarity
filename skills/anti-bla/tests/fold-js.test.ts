@@ -86,6 +86,57 @@ describe("fold-js keeps behavior it cannot prove unchanged", () => {
     expect(load(foldJs(code).code).get!()).toBe(1);
   });
 
+  test("a call to a function that throws is kept", () => {
+    const code = `${seed}function fail(m) { throw m; }\nfunction f(x) { if (typeof x !== "number") { fail("bad input"); } return x; }\nmodule.exports = { f };\n`;
+    const out = load(foldJs(code).code);
+    expect(() => out.f!("a")).toThrow();
+    expect(out.f!(1)).toBe(1);
+  });
+
+  test("a call to a function that reaches a throw through a helper is kept", () => {
+    const code = `${seed}function inner(m) { throw m; }\nfunction outer(m) { inner(m); }\nfunction f(x) { if (typeof x !== "number") { outer("bad input"); } return x; }\nmodule.exports = { f };\n`;
+    expect(() => load(foldJs(code).code).f!("a")).toThrow();
+  });
+
+  test("a call to a function with an unbounded or unprovable loop is kept, a bounded counter loop is dropped", () => {
+    const body = (inner: string) => `${seed}function work() { ${inner} }\nwork();\nmodule.exports = { f: () => 1 };\n`;
+    expect(foldJs(body("for (;;) {}")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("while (true) {}")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("for (let i = 0; i < 3; i++) { i = 0; }")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("for (let i = 0; i < 1e999; i++) {}")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("let k = 1; k = k + 1;")).stats.sinkCallsRemoved).toBe(1);
+    expect(foldJs(body("let k = 1; for (let i = 0; i < 8; i++) { k = k + i; }")).stats.sinkCallsRemoved).toBe(1);
+  });
+
+  test("a call that reads or writes a member of private state that may be undefined is kept", () => {
+    const code = `${seed}let cache;\nfunction touch(k) { cache[k] = 1; }\nfunction f(x) { if (typeof x !== "number") { touch("a"); } return x; }\nmodule.exports = { f };\n`;
+    expect(() => load(foldJs(code).code).f!("a")).toThrow();
+  });
+
+  test("a call to a member-writing function on private object state is still dropped", () => {
+    const code = `${seed}const cache = { n: 0 };\nfunction touch() { cache.n = cache.n + 1; }\ntouch();\nmodule.exports = { f: () => 1 };\n`;
+    expect(foldJs(code).stats.sinkCallsRemoved).toBe(1);
+  });
+
+  test("a loop bounded by an array length is kept when the body can grow or move the bound", () => {
+    const body = (inner: string, test = "i < a.length") => `${seed}function work() { const a = [1, 2]; for (let i = 0; ${test}; i++) { ${inner} } }\nwork();\nmodule.exports = { f: () => 1 };\n`;
+    expect(foldJs(body("a[i + 1] = 0;")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("a[i] = 0;", "i <= a.length")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("a = [...a, 1];")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("a.push(1);")).stats.sinkCallsRemoved).toBe(0);
+    expect(foldJs(body("a[i] = a[i] ^ 1;")).stats.sinkCallsRemoved).toBe(1);
+  });
+
+  test("a call to a recursive function is kept", () => {
+    const code = `${seed}function spin() { spin(); }\nfunction f(x) { if (typeof x !== "number") { spin(); } return x; }\nmodule.exports = { f };\n`;
+    expect(() => load(foldJs(code).code).f!("a")).toThrow(RangeError);
+  });
+
+  test("a sink that calls another sink is dropped, because a call chain is not a cycle", () => {
+    const code = `${seed}const cache = { n: 0 };\nfunction bump() { cache.n = 1; }\nfunction run() { bump(); }\nrun();\nmodule.exports = { f: () => 1 };\n`;
+    expect(foldJs(code).stats.sinkCallsRemoved).toBe(2);
+  });
+
   test("a name that is rebound or not const is never treated as a seed", () => {
     const shadowed = "const flags = Number(process.argv[2]) | 1;\nfunction check(flags) { if ((flags & 1) === 1) return 'odd'; return 'even'; }\nmodule.exports = { check };\n";
     expect(load(foldJs(shadowed).code).check!(2)).toBe("even");

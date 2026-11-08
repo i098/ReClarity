@@ -7,7 +7,7 @@ JS and Electron are built. Other formats are listed so the gap is visible.
 | BLA technique | REA step it hits | Seen by (`scan.ts`) | Cleaned by | Status |
 | --- | --- | --- | --- | --- |
 | Opaque predicates on a seed constant | `analyze_javascript_application` (all JS limits) | `opaque_predicate` | `fold-js.ts` folds predicates that give one answer for every seed value, drops the dead branch | built |
-| Decoy clusters kept alive by `void [...]` | JS call graph | `keepalive_array` | `fold-js.ts` removes declarations no live code reaches, and calls to functions that only touch private state | built |
+| Decoy clusters kept alive by `void [...]` | JS call graph | `keepalive_array` | `fold-js.ts` removes declarations no live code reaches, and literal-argument calls to sink functions (no `this`, `throw`, unbounded loop, recursion or call to a non-sink; only own locals and private state) | built |
 | Ternary chunk strings | `primitive-candidates` (256) | `ternary_chunks` | `fold-js.ts` folds the chunk conditions | built |
 | String doubling | `primitive-bytes` (1 MiB) | `string_doubling` | `fold-js.ts` removes the unread doubling chain | built |
 | Getter rings | `getter-expansion` (512) | `getter_ring` | Removed when unreached | built |

@@ -7,6 +7,8 @@ import { MAX_FIXTURES, admit, asData, check, fixtureTargets, isCapacityError, ma
 import { run, treeHash } from "../scripts/run.ts";
 import { FIXTURES, floodAsar } from "./fixtures/make.ts";
 
+const sandboxWorks = !!Bun.which("bwrap") && Bun.spawnSync(["bwrap", "--ro-bind", "/", "/", "true"]).exitCode === 0;
+
 const tmp = mkdtempSync(join(tmpdir(), "antibla-guard-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -71,11 +73,40 @@ describe("run wrapper", () => {
     expect(r.attempts).toHaveLength(1);
   });
 
-  test("a capacity error on an already clean copy is reported, not retried on the same bytes", () => {
-    const r = run(target, { work: join(tmp, "w2"), rea: "echo Primitive candidate budget exceeded >&2; exit 1" });
+  test("a capacity error on a plain target is reported, not retried on the same bytes", () => {
+    const plain = join(tmp, "plain2.js");
+    writeFileSync(plain, "module.exports = 1;\n");
+    const r = run(plain, { work: join(tmp, "w2"), rea: "echo Primitive candidate budget exceeded >&2; exit 1" });
     expect(r.verdict).toBe("rea-failed");
-    expect(r.reason).toContain("--coverage");
+    expect(r.reason).toContain("same bytes");
     expect(r.attempts).toHaveLength(1);
+  });
+
+  describe.skipIf(!sandboxWorks)("retry on a coverage-pruned copy", () => {
+    const decoy = join(tmp, "decoy.js");
+    writeFileSync(decoy, "function shadow() { return 'ENCLAVE-ATTESTATION-GUARD'; }\nvoid shadow;\nfunction work() { return 1; }\nwork();\n");
+    const once = (name: string) => `if [ -e ${join(tmp, name)} ]; then exit 0; fi; touch ${join(tmp, name)}; echo 'budget exceeded' >&2; exit 1`;
+
+    test("a capacity error on the first copy, then ok on the pruned copy", () => {
+      const r = run(decoy, { work: join(tmp, "w11"), rea: once("once-ok") });
+      expect(r.verdict).toBe("ok");
+      expect(r.attempts).toHaveLength(2);
+      expect(r.prepared).toContain("b-quarantine");
+      expect(readFileSync(join(r.prepared), "utf8")).not.toContain("shadow");
+    });
+
+    test("a capacity error on both copies is reported after the retry", () => {
+      const r = run(decoy, { work: join(tmp, "w12"), rea: "echo 'budget exceeded' >&2; exit 1" });
+      expect(r.verdict).toBe("capacity-error-after-retry");
+      expect(r.attempts).toHaveLength(2);
+    });
+
+    test("a first copy that is already pruned is not retried", () => {
+      const r = run(decoy, { work: join(tmp, "w13"), rea: "echo 'budget exceeded' >&2; exit 1", coverage: true });
+      expect(r.verdict).toBe("rea-failed");
+      expect(r.reason).toContain("same bytes");
+      expect(r.attempts).toHaveLength(1);
+    });
   });
 
   test("a capacity error on an ASAR target ends in a report, not a crash", () => {

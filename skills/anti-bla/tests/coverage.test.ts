@@ -64,9 +64,9 @@ process.exit(leaked);
     expect(r.exitCode).toBe(0);
   });
 
-  test("coverage files the target plants (links, bad JSON) are ignored, not read or fatal", () => {
-    const hostFile = join(tmp, "host-only.json");
-    writeFileSync(hostFile, "{ not json s3cret");
+  test("coverage files the target plants are ignored: a link to valid coverage JSON cannot mark a decoy as run", () => {
+    const hostFile = join(tmp, "host-cov.json");
+    writeFileSync(hostFile, JSON.stringify({ result: [{ url: "file:///app/main.js", functions: [{ functionName: "", isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: 100000, count: 1 }] }] }] }));
     const f = app(
       "plant",
       `const fs = require("fs");
@@ -75,11 +75,14 @@ fs.writeFileSync("/cov/y.json", "{\\"result\\": 5}");
 fs.writeFileSync("/cov/z.json", "not json");
 fs.writeFileSync("/cov/w.json", "{\\"result\\":[{}]}");
 fs.writeFileSync("/cov/v.json", "{\\"result\\":[{\\"url\\":\\"file:///app/main.js\\"}]}");
+function shadow() { return 'ENCLAVE-ATTESTATION-GUARD'; }
+void shadow;
 module.exports = 1;
 `,
     );
     const r = coverage(f);
-    expect(r.files[0]!.file).toBe("main.js");
+    expect(r.files.map((x) => x.file)).toEqual(["main.js"]);
+    expect(kinds(r).shadow).toBe("decoy_suspect");
   });
 
   test("a target that never ends is killed at the time limit", () => {

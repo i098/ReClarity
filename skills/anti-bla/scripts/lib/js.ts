@@ -121,7 +121,7 @@ export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
 
 type Val = string | number | boolean;
 const NO = Symbol("no");
-let touched = false;
+let read = new Set<string>();
 
 function ev(n: Expression, env: Map<string, number>): Val | typeof NO {
   switch (n.type) {
@@ -129,7 +129,7 @@ function ev(n: Expression, env: Map<string, number>): Val | typeof NO {
       return typeof n.value === "string" || typeof n.value === "number" || typeof n.value === "boolean" ? n.value : NO;
     case "Identifier":
       if (!env.has(n.name)) return NO;
-      touched = true;
+      read.add(n.name);
       return env.get(n.name)!;
     case "UnaryExpression": {
       const v = ev(n.argument, env);
@@ -205,7 +205,7 @@ export function opaqueValue(n: Expression, seeds: Seed[]): { value: Val } | unde
   if (!seeds.length || n.type === "Literal") return undefined;
   const rounds = Math.max(...seeds.map((s) => s.samples.length));
   let first: Val | typeof NO = NO;
-  touched = false;
+  read = new Set();
   for (let i = 0; i < rounds; i++) {
     const env = new Map(seeds.map((s) => [s.name, s.samples[i % s.samples.length]!] as const));
     const v = ev(n, env);
@@ -213,5 +213,6 @@ export function opaqueValue(n: Expression, seeds: Seed[]): { value: Val } | unde
     if (i === 0) first = v;
     else if (!Object.is(v, first)) return undefined;
   }
-  return touched && first !== NO ? { value: first } : undefined;
+  const varying = seeds.filter((s) => s.samples.length > 1 && read.has(s.name));
+  return read.size && varying.length < 2 && first !== NO ? { value: first } : undefined;
 }

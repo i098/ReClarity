@@ -99,4 +99,14 @@ describe("sanitize", () => {
     expect(() => a.read(a.files[0]!)).toThrow(/malformed ASAR entry/);
     a.close();
   });
+
+  test("entries named like Object.prototype keys survive a rebuild", () => {
+    const f = join(tmp, "proto.asar");
+    const paths = ["__proto__", "d/__proto__", "constructor/y"];
+    writeFileSync(f, buildAsar(paths.map((path) => ({ path, node: {}, data: Buffer.from(path) }))));
+    const a = openAsar(f);
+    expect(a.files.map((x) => x.path).sort()).toEqual([...paths].sort());
+    expect(a.read(a.files.find((x) => x.path === "__proto__")!).toString()).toBe("__proto__");
+    a.close();
+  });
 });

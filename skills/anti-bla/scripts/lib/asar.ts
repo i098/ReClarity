@@ -63,13 +63,13 @@ export function openAsar(path: string): OpenAsar {
 
 /** Build an archive. Files with `data` are packed; others keep their node (unpacked or link). */
 export function buildAsar(entries: { path: string; node: AsarNode; data?: Buffer }[]): Buffer {
-  const root: AsarNode = { files: {} };
+  const root: AsarNode = { files: Object.create(null) };
   const chunks: Buffer[] = [];
   let offset = 0;
   for (const e of entries) {
     const parts = e.path.split("/");
     let dir = root;
-    for (const p of parts.slice(0, -1)) dir = dir.files![p] ??= { files: {} };
+    for (const p of parts.slice(0, -1)) dir = dir.files![p] ??= { files: Object.create(null) };
     const node: AsarNode = { ...e.node };
     if (e.data) {
       node.size = e.data.length;

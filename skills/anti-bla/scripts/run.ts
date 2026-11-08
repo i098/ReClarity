@@ -4,7 +4,7 @@
 //   bun run.ts <target> --work <dir> [--rea "rea ... {target}"] [--coverage]
 import { lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { coverage, quarantineCopy } from "./coverage.ts";
+import { coverage, hasSandbox, quarantineCopy } from "./coverage.ts";
 import { foldPath } from "./fold-js.ts";
 import { admit, asData, check, inputHash, isReaCapacityError, loadLedger, mayRetry, saveLedger, type Ledger } from "./guard.ts";
 import { sanitize } from "./sanitize.ts";
@@ -77,11 +77,11 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
     let a = runRea(opts.rea, prepared, ledger);
     rep.attempts.push(a);
     if (a.capacityError) {
-      const second = prepare(target, opts.work, "b", !!opts.coverage);
+      const second = prepare(target, opts.work, "b", hasSandbox() && !target.endsWith(".asar"));
       const secondHash = treeHash(second);
       if (ledger.tried.includes(inputHash(secondHash))) {
         rep.verdict = "rea-failed";
-        rep.reason = `capacity error; cleaning changed nothing, so the same input is not retried${opts.coverage || target.endsWith(".asar") ? "" : ". Add --coverage to prune decoy suspects"}`;
+        rep.reason = "capacity error; the retry copy has the same bytes as the copy already tried, so it is not retried";
       } else {
         const v = mayRetry(ledger, secondHash);
         if (v.ok && check(ledger).ok) {

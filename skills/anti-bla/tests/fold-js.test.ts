@@ -91,6 +91,11 @@ describe("fold-js keeps behavior it cannot prove unchanged", () => {
     expect(foldJs(masked).stats.branchesDropped).toBeGreaterThan(0);
   });
 
+  test("two different seeds are never assumed equal: a test that compares them is kept", () => {
+    const code = "const A = (process.pid & 0xff) | 1;\nconst B = (process.ppid & 0xff) | 1;\nfunction f() { return A === B ? 'same' : 'diff'; }\nmodule.exports = { f };\n";
+    expect(foldJs(code).code).toBe(code);
+  });
+
   test("a classic script keeps its top-level declarations, which other scripts may call", () => {
     const code = `${seed}function onSave() { return 1; }\nfunction helper() { return 2; }\n`;
     const out = foldJs(code).code;

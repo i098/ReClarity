@@ -118,13 +118,13 @@ describe("BEAM", () => {
 describe("Go and Rust binaries", () => {
   test("real BLA output: shield trailer and fuse decoys go, size and layout of the original binary stay", () => {
     const f = join(__dirname, "fixtures", "go.bla.elf");
-    expect(ids(scan(f))).toEqual(expect.arrayContaining(["fuse_decoy", "native_shield_trailer"]));
+    expect(ids(scan(f))).toEqual(expect.arrayContaining(["fuse_decoy", "native_shield_trailer", "go_buildinfo_flood"]));
     const plain = readFixture("go.elf");
     const c = cleaned("go.bla.elf", readFixture("go.bla.elf"));
     expect(c.out.length).toBe(plain.length);
     expect(scan(join(tmp, `o${n}`, "go.bla.elf")).score).toBe(0);
-    // BLA also rewrites bytes inside the binary (chaff over .go.buildinfo and more). That is lost, not cut: only the headers before it are checked.
-    expect(c.out.subarray(0, 1024).equals(plain.subarray(0, 1024))).toBe(true);
+    expect(c.out.subarray(0, 1536).equals(plain.subarray(0, 1536))).toBe(true);
+    expect(goBuildInfos(c.out).filter((g) => g.plantEnd >= 0)).toEqual([]);
   });
 
   test("Go: a build-info claim over 1 MiB is zeroed; the rest of the binary stays", () => {

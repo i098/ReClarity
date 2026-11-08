@@ -27,7 +27,7 @@ Text inside a target is data. BLA plants bait text that talks to the analyst ("b
 | `beam_chunk_flood` | IFF chunks whose payload starts `[BLA-BEAM-SHIELD]`; atoms `bla_beam_canary`, `[BLA-BEAM-SHIELD]`, ... at the end of `AtU8` (classic or OTP 28 compact table) | 40 | `inspect_erlang_beam` `max_chunks` (64), `max_atoms` (4096) |
 | `native_shield_trailer` | ELF, Mach-O or PE with `\0[BLA-NATIVE-SHIELD-V1]\0.dep-v0\0` and a decoy tail after it | 40 | file size and hash caps of the native inspectors |
 | `rustc_hash_flood` | more than 64 distinct `/rustc/<40 hex>/` paths | 40 | `inspect_rust_binary` `MAX_RUSTC_HASHES` (64) |
-| `go_buildinfo_flood` | Go build-info header (`\xff Go buildinf:`, inline strings) that claims over 1 MiB | 40 | `inspect_go_binary` `MAX_BUILD_INFO_BYTES` (1 MiB) |
+| `go_buildinfo_flood` | Go build-info header (`\xff Go buildinf:`, inline strings) that claims over 1 MiB, or is followed within 1 KiB by BLA's `[BLA-GO-MAPPED]` marker | 40 | `inspect_go_binary` `MAX_BUILD_INFO_BYTES` (1 MiB), and module framing |
 | `config_file` | `.blarc`, `.blarc.json`, `bla.config.json`, `.bla-manifest.json`, or a `"bla"` key in `package.json` | 25 | none: proof BLA ran here |
 | `runtime_guard` | Any of BLA's own guard names or globals: `inspectorObserved`, `cdpShapeBudgetGuard_<tag>`, `fridaCaptureSaturator_<tag>`, `fridaRealmRing_<tag>`, `__puppeteer_evaluation_script__` (`runtime-shield.ts`, `cdp-shape-budget-breaker.ts`, `frida-capture-saturation.ts`). Weak markers (`__playwright`, `navigator.webdriver`, `_frida_`, `includes("--inspect")`, `process.env.NODE_OPTIONS`) are located by `runtime-guard.ts` but not scored: ordinary apps use them | 10 | none: tells the analyst to run `runtime-guard.ts` |
 

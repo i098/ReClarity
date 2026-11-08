@@ -229,7 +229,7 @@ function scanNative(bytes: Buffer, path: string, acc: Acc): void {
   const rust = rustcPaths(bytes);
   if (rust.distinct > REA_MAX_RUSTC_HASHES) acc.add("rustc_hash_flood", `${path}: ${rust.distinct} distinct rustc paths (REA limit ${REA_MAX_RUSTC_HASHES})`, rust.distinct);
   const go = goBuildInfos(bytes).filter(isGoFlood);
-  if (go.length) acc.add("go_buildinfo_flood", `${path}: Go build info claims ${go[0]!.claimed} B (REA limit ${REA_MAX_GO_BUILDINFO})`, go.length);
+  if (go.length) acc.add("go_buildinfo_flood", go[0]!.plantEnd >= 0 ? `${path}: BLA Go plant marker after build info at ${go[0]!.offset}` : `${path}: Go build info claims ${go[0]!.claimed} B (REA limit ${REA_MAX_GO_BUILDINFO})`, go.length);
 }
 
 function scanFile(path: string, size: number, acc: Acc): void {

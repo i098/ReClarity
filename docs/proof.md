@@ -79,14 +79,14 @@ Run on 2026-11-08 on this host. These runs are a single pass per file: they show
 | BEAM `inspect-erlang-beam` | 168 B form, 6 chunks | balanced (66 decoy chunks) | `resource_constraint`: "BEAM form exceeds the 64-chunk budget" | ok; sha256 equals the plain input |
 | BEAM | same | bankrupt (254 decoy chunks, 4157 canary atoms) | same error | ok; sha256 equals the plain input |
 | Go `inspect-go-binary` | BLA mapped Go ELF (`buildMappedGoFlutterElfFixture`), 51,339 B | bankrupt (1.2 MB, oversize build-info plant) | `resource_constraint`: "Go build-info string length exceeds the 1 MiB limit" | ok, 51,339 B |
-| Go | same | balanced | `invalid_request`: "Go module string framing is invalid" | **same error: not fixed** |
+| Go | same | balanced | `invalid_request`: "Go module string framing is invalid" | ok, 51,339 B, `build_info: null` (as the plain fixture) |
 | Rust `inspect-rust-binary` | `rustc -O` hello world, 4,540,000 B | balanced (68 rustc hashes) and bankrupt (5,704,717 B) | ok (no cap hit) | ok; sha256 equals the plain input, both intensities |
 
 What this shows:
 
 - **WASM, BEAM:** the cleaned copy is the plain module, and REA reads it fully. BEAM cleaned bytes equal the plain input exactly. WASM hardened output fits REA at maximum, so the gain there is a smaller and exact export list; at bankrupt REA already gave a partial interface.
 - **Go bankrupt:** the cap is removed. BLA overwrote the real build info with its plant, so the cleaned copy has none (`build_info: null`, as the plain fixture has). It is not recovered.
-- **Go balanced: not fixed.** BLA rewrites bytes inside the binary (over 36,000 bytes differ from the plain fixture). `sanitize.ts` cuts the trailer and fuse decoys, but REA still rejects the module string framing. The original is not recoverable from the hardened file.
+- **Go balanced:** the plant is a build-info header in the empty `.go.buildinfo` section, followed by the `[BLA-GO-MAPPED]` marker. `sanitize.ts` zeroes header through marker, so bytes 0..1536 equal the plain fixture and REA passes. The bytes elsewhere that BLA changed (chaff, over 36,000 bytes differ) are not in the REA path and stay.
 - **Rust:** for a real Rust binary, BLA puts the 68 rustc hashes in the trailer. `sanitize.ts` cuts it and the result is byte-identical to the plain binary. REA 6.8.0 did not hit its 64-hash cap on the hardened file in this run, so no failing-to-passing change is shown: the proof is the identity of the bytes.
 - **Not run:** no real Go compiler binary was built (no `go` on this host); the Go fixture is BLA's own mapped ELF. No real Mach-O or PE was run. `wasm-objdump` and `wasm-validate` pass on the cleaned WASM; no browser or Node ran the cleaned module.
 - `run.ts` treats REA's `resource_constraint` error object as a capacity error, so a BEAM or Go cap hit triggers the one retry on the cleaned copy. `invalid_request` does not.

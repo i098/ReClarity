@@ -62,8 +62,9 @@ export function goBuildInfos(bytes: Buffer): GoBuildInfo[] {
     if (at + 32 > bytes.length || !((bytes[at + 15] ?? 0) & 2)) continue;
     const version = uvarint(bytes, at + 32);
     if (!version) continue;
-    const marked = bytes.subarray(version.next, version.next + GO_MAPPED_MARKER.length).equals(GO_MAPPED_MARKER);
-    const plantEnd = marked ? version.next + GO_MAPPED_MARKER.length : -1;
+    const found = bytes.subarray(version.next, at + 1024).indexOf(GO_MAPPED_MARKER);
+    const marked = found >= 0;
+    const plantEnd = marked ? version.next + found + GO_MAPPED_MARKER.length : -1;
     if (version.value > REA_MAX_GO_BUILDINFO || marked) {
       out.push({ offset: at, claimed: version.value, plantEnd });
       continue;
@@ -74,4 +75,4 @@ export function goBuildInfos(bytes: Buffer): GoBuildInfo[] {
   return out;
 }
 
-export const isGoFlood = (g: GoBuildInfo): boolean => g.claimed > REA_MAX_GO_BUILDINFO;
+export const isGoFlood = (g: GoBuildInfo): boolean => g.claimed > REA_MAX_GO_BUILDINFO || g.plantEnd >= 0;

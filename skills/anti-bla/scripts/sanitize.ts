@@ -1,15 +1,18 @@
 #!/usr/bin/env bun
 // Write a clean COPY of a build for REA: drop ASAR header flood, neutralize decoy fuse
 // sentinels, drop BLA config files. The original is never written. Code is never deleted
-// here: logic that only looks like a decoy is handled by coverage.ts ("not run").
+// here: logic that only looks like a decoy is handled by coverage.ts ("not run"). The one exception is a
+// .pyc: BLA's woven decoy code objects are provably unused there (nothing points at them), so they go.
 import { copyFileSync, closeSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
 import { SENTINEL, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
-import { CONFIG_NAMES, FLOOD_MIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
+import { cleanPyc } from "./lib/pybox.ts";
+import { pycDecoyNames } from "./lib/pytarpit.ts";
+import { BAIT, CONFIG_NAMES, FLOOD_MIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
 
 export interface Action {
-  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "copied" | "skipped-symlink";
+  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "pyc-decoys-dropped" | "pyc-kept-unchanged" | "copied-asar-unchanged" | "copied" | "skipped-symlink";
   path: string;
   detail?: string;
 }
@@ -26,6 +29,7 @@ export interface SanitizeReport {
 
 const MIB = 1024 * 1024;
 const REA_ASAR_MAX = 256 * MIB;
+const MAX_PYC = 16 * MIB;
 const SUSPECT = /(^|\/)(enclave|tee|attestation)[^/]*/i;
 
 function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
@@ -71,6 +75,26 @@ function sanitizeBinary(src: string, dst: string, r: SanitizeReport): void {
   r.actions.push({ kind: "fuse-decoys-zeroed", path: src, detail: `${decoys.length} decoy sentinels zeroed` });
 }
 
+/** A .pyc that carries BLA decoy names or honey text gets the cleaner; every other one is copied as it is. */
+function sanitizePyc(src: string, dst: string, r: SanitizeReport): void {
+  const text = readFileSync(src).toString("latin1");
+  if (pycDecoyNames(text).size < 3 && !text.match(BAIT)) {
+    copyFileSync(src, dst);
+    return;
+  }
+  const out = cleanPyc(src, dst);
+  if (out.kind === "cleaned" && !out.removed.length && !out.trailerDropped) {
+    copyFileSync(src, dst); // nothing of BLA's in it: keep the exact bytes, not a re-marshalled copy
+    return;
+  }
+  if (out.kind === "cleaned") {
+    r.actions.push({ kind: "pyc-decoys-dropped", path: src, detail: `${out.removed.length} decoy code objects dropped, ${out.trailerDropped} B honey trailer dropped` });
+    return;
+  }
+  copyFileSync(src, dst);
+  r.actions.push({ kind: "pyc-kept-unchanged", path: src, detail: out.why });
+}
+
 function copyTree(src: string, dst: string, r: SanitizeReport): void {
   const st = statSync(src);
   if (st.isDirectory()) {
@@ -85,6 +109,7 @@ function copyTree(src: string, dst: string, r: SanitizeReport): void {
   mkdirSync(dirname(dst), { recursive: true });
   if (CONFIG_NAMES.includes(basename(src))) r.actions.push({ kind: "dropped-config", path: src });
   else if (extname(src) === ".asar") sanitizeAsar(src, dst, r);
+  else if (extname(src) === ".pyc" && st.size <= MAX_PYC) sanitizePyc(src, dst, r);
   else if (st.size >= MIB && isNativeExecutable(src)) sanitizeBinary(src, dst, r);
   else copyFileSync(src, dst);
 }

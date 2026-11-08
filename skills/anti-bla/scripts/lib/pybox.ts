@@ -35,16 +35,16 @@ export interface BoxResult {
 
 function box(args: string[], timeoutSec: number): BoxResult {
   const r = Bun.spawnSync(["bwrap", ...args], { timeout: timeoutSec * 1000, killSignal: "SIGKILL", env: { PATH: process.env.PATH ?? "/usr/bin" }, stdout: "pipe", stderr: "pipe" });
-  return { exitCode: r.exitCode ?? null, timedOut: r.signalCode === "SIGKILL" || r.exitedDueToTimeout === true, stdout: r.stdout.toString().slice(0, 1_000_000), stderr: r.stderr.toString().slice(0, 2000) };
+  return { exitCode: r.exitCode ?? null, timedOut: r.signalCode === "SIGKILL" || r.exitedDueToTimeout === true, stdout: r.stdout.toString().slice(0, MAX_COV_JSON), stderr: r.stderr.toString().slice(0, 2000) };
 }
 
-/** `python -I pyfacts.py`: parses, never imports. Run with the plain host python3 (any 3.9+; `ast.unparse` needs it). */
+/** `python -I pyfacts.py` inside bwrap: parses, never imports. Any host python3 3.9+ (`ast.unparse` needs it). */
 export function pyFacts(root: string, rels: string[]): Record<string, unknown> {
   const py = Bun.which("python3");
   if (!py || !rels.length) return {};
-  const r = Bun.spawnSync([py, "-I", PYFACTS, root, ...rels], { stdout: "pipe", stderr: "ignore", maxBuffer: 256 * 1024 * 1024 });
+  const r = box([...baseArgs(), ...interpreterBinds(py), "--ro-bind", root, SANDBOX_APP, "--ro-bind", PYFACTS, "/pyfacts.py", "--chdir", SANDBOX_APP, realpathSync(py), "-I", "/pyfacts.py", SANDBOX_APP, ...rels], 120);
   try {
-    return JSON.parse(r.stdout.toString());
+    return JSON.parse(r.stdout);
   } catch {
     return {};
   }

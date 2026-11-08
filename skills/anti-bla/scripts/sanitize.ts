@@ -112,7 +112,7 @@ function sanitizeData(kind: NonNullable<ReturnType<typeof dataKind>>, src: strin
       const c = cleanPcap(readFileSync(src));
       if (!c) return plain();
       writeFileSync(dst, c.buffer);
-      r.actions.push({ kind: "pcap-flood-dropped", path: src, detail: `${c.dropped} BLA records dropped, ${c.kept} kept` });
+      r.actions.push({ kind: "pcap-flood-dropped", path: src, detail: `${c.dropped} BLA records dropped, ${c.kept} kept${c.kept ? "" : "; no real packets left: BLA discards a capture it cannot read (pcapng) and writes its own, so the original cannot be recovered"}` });
       return;
     }
     case "evm": {

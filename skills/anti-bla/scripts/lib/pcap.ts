@@ -2,6 +2,9 @@
 // 10.0.0.2:80, `GET /bla/tarpit/exhaust`) and deep-label DNS-like UDP packets (port 1337 -> 53), each
 // carrying `[BLA-PCAP-SHIELD]`. tshark expands them past REA's 8 MiB JSON limit. The original records stay
 // byte for byte. A record is dropped only when its whole shape matches, never on the marker alone.
+// BLA 3.1.0 never writes pcapng: given one, it throws the capture away and writes a fresh classic header with its
+// own packets. So a hardened file holds no real packets, and none can come back. pcapng is still handled: an
+// Enhanced Packet Block on an Ethernet interface that holds a BLA frame is dropped, everything else is kept.
 
 const MARKER = Buffer.from("[BLA-PCAP-SHIELD]", "utf8");
 const HTTP_LINE = Buffer.from("GET /bla/tarpit/exhaust HTTP/1.1\r\nHost: enclave.internal\r\nUser-Agent: BLA-PCAP-Shield/1.0\r\n[BLA-PCAP-SHIELD] canary=", "utf8");
@@ -14,6 +17,9 @@ interface PcapLayout {
   linktype: number;
 }
 
+const PCAPNG_SHB = 0x0a0d0d0a;
+const PCAPNG_BYTE_ORDER = 0x1a2b3c4d;
+
 /** Classic pcap magic in any of the four forms (micro/nano, either byte order). */
 export function pcapLayout(head: Buffer): PcapLayout | undefined {
   if (head.length < 24) return undefined;
@@ -22,6 +28,8 @@ export function pcapLayout(head: Buffer): PcapLayout | undefined {
   if (be === 0xd4c3b2a1 || be === 0x4d3cb2a1) return { le: true, linktype: head.readUInt32LE(20) };
   return undefined;
 }
+
+const isPcapng = (b: Buffer): boolean => b.length >= 12 && b.readUInt32BE(0) === PCAPNG_SHB && [b.readUInt32LE(8), b.readUInt32BE(8)].includes(PCAPNG_BYTE_ORDER);
 
 const ipIs = (f: Buffer, at: number, a: number[]): boolean => a.every((b, i) => f[at + i] === b);
 
@@ -39,6 +47,7 @@ export function isShieldFrame(f: Buffer): boolean {
 export interface PcapResult {
   /** The cleaned file. */
   buffer: Buffer;
+  /** Records kept (classic) or blocks kept, header blocks included (pcapng). */
   kept: number;
   dropped: number;
   /** Bytes of the dropped records, headers included. */
@@ -51,8 +60,16 @@ interface Span {
   shield: boolean;
 }
 
-/** Record spans of a classic pcap, in file order, and where parsing stopped (a truncated last record is left out). */
-function records(buf: Buffer, layout: PcapLayout): { spans: Span[]; stop: number } {
+interface Scan {
+  /** Bytes in front of the first span that are always kept (the classic global header). */
+  head: number;
+  spans: Span[];
+  /** Where parsing stopped; a truncated last record or block is left out. */
+  stop: number;
+}
+
+/** Record spans of a classic pcap, in file order. */
+function classicRecords(buf: Buffer, layout: PcapLayout): Scan {
   const spans: Span[] = [];
   let at = 24;
   while (at + 16 <= buf.length) {
@@ -62,23 +79,51 @@ function records(buf: Buffer, layout: PcapLayout): { spans: Span[]; stop: number
     spans.push({ start: at, end, shield: isShieldFrame(buf.subarray(at + 16, end)) });
     at = end;
   }
-  return { spans, stop: at };
+  return { head: 24, spans, stop: at };
 }
 
-/** Count of BLA records in the capture; 0 for anything that is not an Ethernet classic pcap. */
-export function countShieldRecords(buf: Buffer): number {
+/** Every block of a pcapng file as a span. Only an Enhanced Packet Block on an Ethernet interface can be shield. */
+function pcapngBlocks(buf: Buffer): Scan {
+  const spans: Span[] = [];
+  let le = true;
+  let links: number[] = [];
+  let at = 0;
+  while (at + 12 <= buf.length) {
+    if (buf.readUInt32BE(at) === PCAPNG_SHB) le = buf.readUInt32LE(at + 8) === PCAPNG_BYTE_ORDER;
+    const u32 = (o: number): number => (le ? buf.readUInt32LE(at + o) : buf.readUInt32BE(at + o));
+    const type = u32(0);
+    const len = u32(4);
+    if (len < 12 || len % 4 || at + len > buf.length || u32(len - 4) !== len) break;
+    let shield = false;
+    if (type === PCAPNG_SHB) links = [];
+    else if (type === 1 && len >= 16) links.push(le ? buf.readUInt16LE(at + 8) : buf.readUInt16BE(at + 8));
+    else if (type === 6 && len >= 32 && links[u32(8)] === 1) {
+      const cap = u32(20);
+      shield = cap <= len - 32 && isShieldFrame(buf.subarray(at + 28, at + 28 + cap));
+    }
+    spans.push({ start: at, end: at + len, shield });
+    at += len;
+  }
+  return { head: 0, spans, stop: at };
+}
+
+function shieldSpans(buf: Buffer): Scan | undefined {
+  if (!buf.includes(MARKER)) return undefined;
+  if (isPcapng(buf)) return pcapngBlocks(buf);
   const layout = pcapLayout(buf);
-  if (!layout || layout.linktype !== 1 || !buf.includes(MARKER)) return 0;
-  return records(buf, layout).spans.filter((r) => r.shield).length;
+  return layout?.linktype === 1 ? classicRecords(buf, layout) : undefined;
+}
+
+/** Count of BLA records in the capture; 0 for anything that is not an Ethernet classic pcap or a pcapng file. */
+export function countShieldRecords(buf: Buffer): number {
+  return shieldSpans(buf)?.spans.filter((r) => r.shield).length ?? 0;
 }
 
 /** Drop shield frames. `undefined` when there are none. Bytes after a truncated last record are kept. */
 export function cleanPcap(buf: Buffer): PcapResult | undefined {
-  const layout = pcapLayout(buf);
-  if (!layout || layout.linktype !== 1 || !buf.includes(MARKER)) return undefined;
-  const { spans, stop } = records(buf, layout);
-  const bad = spans.filter((r) => r.shield);
-  if (!bad.length) return undefined;
-  const keep = [buf.subarray(0, 24), ...spans.filter((r) => !r.shield).map((r) => buf.subarray(r.start, r.end)), buf.subarray(stop)];
-  return { buffer: Buffer.concat(keep), kept: spans.length - bad.length, dropped: bad.length, droppedBytes: bad.reduce((n, r) => n + r.end - r.start, 0) };
+  const s = shieldSpans(buf);
+  const bad = s?.spans.filter((r) => r.shield);
+  if (!s || !bad?.length) return undefined;
+  const keep = [buf.subarray(0, s.head), ...s.spans.filter((r) => !r.shield).map((r) => buf.subarray(r.start, r.end)), buf.subarray(s.stop)];
+  return { buffer: Buffer.concat(keep), kept: s.spans.length - bad.length, dropped: bad.length, droppedBytes: bad.reduce((n, r) => n + r.end - r.start, 0) };
 }

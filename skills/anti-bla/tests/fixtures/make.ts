@@ -117,3 +117,34 @@ export function flutterBinary(plant: { trailer?: boolean; isolate?: boolean } = 
   if (plant.trailer) parts.push(Buffer.from("\0[BLA-NATIVE-SHIELD-V1]\0.dep-v0\0"), flutterTrailer(), Buffer.from("chaff: unrelated trailer text\0"));
   return { buffer: Buffer.concat(parts), real };
 }
+
+/** A pcapng file holding the packets of a little-endian classic pcap: section header, one interface, one Enhanced Packet Block each. */
+export function toPcapng(classic: Buffer, linktype = 1): Buffer {
+  const block = (type: number, body: Buffer): Buffer => {
+    const pad = Buffer.alloc((4 - (body.length % 4)) % 4);
+    const len = 12 + body.length + pad.length;
+    const b = Buffer.alloc(8);
+    b.writeUInt32LE(type, 0);
+    b.writeUInt32LE(len, 4);
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32LE(len);
+    return Buffer.concat([b, body, pad, tail]);
+  };
+  const shb = Buffer.alloc(16);
+  shb.writeUInt32LE(0x1a2b3c4d, 0);
+  shb.writeUInt16LE(1, 4);
+  shb.writeBigInt64LE(-1n, 8);
+  const idb = Buffer.alloc(8);
+  idb.writeUInt16LE(linktype, 0);
+  idb.writeUInt32LE(65535, 4);
+  const parts = [block(0x0a0d0d0a, shb), block(1, idb)];
+  for (let at = 24; at + 16 <= classic.length; ) {
+    const incl = classic.readUInt32LE(at + 8);
+    const epb = Buffer.alloc(20);
+    epb.writeUInt32LE(incl, 12);
+    epb.writeUInt32LE(incl, 16);
+    parts.push(block(6, Buffer.concat([epb, classic.subarray(at + 16, at + 16 + incl)])));
+    at += 16 + incl;
+  }
+  return Buffer.concat(parts);
+}

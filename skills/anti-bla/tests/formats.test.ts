@@ -11,7 +11,7 @@ import { findHoney } from "../scripts/lib/sqlite.ts";
 import { entryData, readZip, replaceData, writeZip, type ZipEntry } from "../scripts/lib/zip.ts";
 import { sanitize } from "../scripts/sanitize.ts";
 import { scan } from "../scripts/scan.ts";
-import { evmWithFiller, flutterBinary, readFixture } from "./fixtures/make.ts";
+import { evmWithFiller, flutterBinary, readFixture, toPcapng } from "./fixtures/make.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "antibla-fmt-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -110,6 +110,50 @@ describe("PCAP", () => {
 
   test("a truncated capture is not cleaned", () => {
     expect(cleanPcap(readFixture("app.bla.pcap").subarray(0, 50))).toBeUndefined();
+  });
+
+  describe("pcapng", () => {
+    test("BLA frames in Enhanced Packet Blocks dropped; the real block and the header blocks kept byte for byte", () => {
+      const bla = toPcapng(readFixture("app.bla.pcap"));
+      expect(countShieldRecords(bla)).toBe(8);
+      const c = cleanPcap(bla)!;
+      expect(c.dropped).toBe(8);
+      expect(c.buffer.equals(toPcapng(readFixture("app.pcap")))).toBe(true);
+      expect(countShieldRecords(c.buffer)).toBe(0);
+    });
+
+    test("a pcapng file with no BLA frame, and one whose interface is not Ethernet, are left alone", () => {
+      expect(cleanPcap(toPcapng(readFixture("app.pcap")))).toBeUndefined();
+      expect(countShieldRecords(toPcapng(readFixture("app.bla.pcap"), 101))).toBe(0);
+    });
+
+    test("a block with a wrong trailing length stops the parse; bytes from there on are kept", () => {
+      const good = toPcapng(readFixture("app.bla.pcap"));
+      const bad = Buffer.from(good);
+      bad.writeUInt32LE(0xdead, bad.length - 4);
+      const c = cleanPcap(bad)!;
+      expect(c.dropped).toBe(7);
+      expect(c.buffer.subarray(c.buffer.length - 4).readUInt32LE(0)).toBe(0xdead);
+    });
+
+    test("scan and sanitize handle .pcapng and .cap names", () => {
+      const dir = join(tmp, "ng");
+      put("ng/a.pcapng", toPcapng(readFixture("app.bla.pcap")));
+      put("ng/b.cap", readFixture("app.bla.pcap"));
+      expect(scan(dir).findings.find((f) => f.id === "pcap_flood")?.count).toBe(16);
+      sanitize(dir, join(tmp, "ng-out"));
+      expect(readFileSync(join(tmp, "ng-out/a.pcapng")).equals(toPcapng(readFixture("app.pcap")))).toBe(true);
+      expect(readFileSync(join(tmp, "ng-out/b.cap")).equals(readFixture("app.pcap"))).toBe(true);
+    });
+
+    test("a capture BLA rebuilt from pcapng holds only BLA frames: cleaned to a header, with a note that the original is gone", () => {
+      const bla = readFixture("app.bla.pcap");
+      // BLA throws the input away: its own header, then its own packets (the first record of the fixture is the real one)
+      put("rb/x.pcapng", Buffer.concat([bla.subarray(0, 24), bla.subarray(24 + 16 + 60)]));
+      const r = sanitize(join(tmp, "rb"), join(tmp, "rb-out"));
+      expect(readFileSync(join(tmp, "rb-out/x.pcapng"))).toHaveLength(24);
+      expect(r.actions[0]?.detail).toContain("cannot be recovered");
+    });
   });
 });
 

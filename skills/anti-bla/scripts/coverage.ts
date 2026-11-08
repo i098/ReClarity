@@ -10,6 +10,7 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { asData } from "./guard.ts";
 import { parseJs, type AnyNode } from "./lib/js.ts";
 import { isKeepAlive, uses } from "./lib/prune.ts";
 
@@ -178,7 +179,7 @@ export function coverage(target: string, opts: RunOptions = {}): CoverageReport 
     const files: FileCoverage[] = [...sources].filter(([k]) => hits.has(k)).map(([k, v]) => ({ file: k, statements: classify(v, hits.get(k)) }));
     const counts: Record<Kind, number> = { run: 0, not_run: 0, decoy_suspect: 0, bait_ran: 0 };
     for (const f of files) for (const s of f.statements) counts[s.kind]++;
-    const notes = [...(run.timedOut ? ["run hit the time limit; statements after it may show as not run"] : []), ...(run.exitCode !== 0 ? [`target exited with ${run.exitCode ?? "a signal"}; coverage labels unreliable, no fixtures built: ${run.stderr.split("\n")[0]}`] : [])];
+    const notes = [...(run.timedOut ? ["run hit the time limit; statements after it may show as not run"] : []), ...(run.exitCode !== 0 ? [`target exited with ${run.exitCode ?? "a signal"}; coverage labels unreliable, no fixtures built: ${asData(run.stderr.split("\n")[0] ?? "", "target-stderr")}`] : [])];
     if (!files.length) notes.push("no covered files: the target never loaded; nothing is marked decoy");
     return { tool: "anti-bla/coverage", target, exitCode: run.exitCode, timedOut: run.timedOut, files, counts, notes };
   } finally {

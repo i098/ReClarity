@@ -115,6 +115,7 @@ describe("run wrapper", () => {
     writeFileSync(asar, floodAsar(150));
     const r = run(asar, { work: join(tmp, "w5"), rea: "echo budget exceeded >&2; exit 1" });
     expect(r.verdict).toBe("rea-failed");
+    expect(r.reason).toContain("without coverage");
     expect(r.attempts).toHaveLength(1);
   });
 
@@ -195,6 +196,36 @@ describe("run wrapper", () => {
     expect(r.verdict).toBe("ok");
     expect(r.attempts).toHaveLength(1);
     expect(existsSync(join(work, "a-clean", "first-app.bla.js"))).toBe(false);
+  });
+
+  test("a second run on the same target and work dir sends no bytes to REA again", () => {
+    const work = join(tmp, "w32");
+    const counter = join(tmp, "w32-calls");
+    const rea = `echo x >> ${counter}`;
+    expect(run(target, { work, rea }).verdict).toBe("ok");
+    const r = run(target, { work, rea });
+    expect(r.verdict).toBe("rea-failed");
+    expect(r.reason).toContain("fresh work dir");
+    expect(r.attempts).toHaveLength(0);
+    expect(readFileSync(counter, "utf8").trim().split("\n")).toHaveLength(1);
+  });
+
+  test("a ledger made by `guard init` and charged to the cap is kept, not replaced", () => {
+    const work = join(tmp, "w33");
+    mkdirSync(work);
+    writeFileSync(join(work, "ledger.json"), JSON.stringify({ ...newLedger(), tokens: 1e9 }));
+    expect(run(target, { work, rea: "true" }).verdict).toBe("capped");
+  });
+
+  describe.skipIf(!sandboxWorks)("coverage notes in the run report", () => {
+    test("a crashing Electron-style main is reported, with target stderr wrapped as data", () => {
+      const f = join(tmp, "crash.bla.js");
+      writeFileSync(f, `const { app } = require('electron');\n${readFileSync(target, "utf8")}`);
+      const r = run(f, { work: join(tmp, "w34"), coverage: true });
+      expect(r.verdict).toBe("cleaned");
+      expect(r.notes.join("\n")).toContain("coverage labels unreliable, no fixtures built");
+      expect(r.notes.join("\n")).toContain('<target-data source="target-stderr"');
+    });
   });
 
   test("a symlinked ASAR target is cleaned under its real name", () => {

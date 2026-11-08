@@ -26,6 +26,8 @@ export interface RunReport {
   prepared: string;
   verdict: "plain-rea" | "cleaned" | "capped" | "capacity-error-after-retry" | "rea-failed" | "ok";
   reason?: string;
+  /** Coverage notes from every sandbox run (crash, time limit). Target stderr inside is wrapped as data. */
+  notes: string[];
 }
 
 function hashNode(path: string): string {
@@ -39,8 +41,8 @@ function hashNode(path: string): string {
 /** Hash of a file, or of a directory's names and contents. The named path is resolved; links below it hash their link text and are never followed. */
 export const treeHash = (path: string): string => hashNode(realpathSync(path));
 
-/** Sanitize, then fold, into work/<tag>. Returns the cleaned path. */
-export function prepare(target: string, work: string, tag: string, withCoverage: boolean): string {
+/** Sanitize, then fold, into work/<tag>. Returns the cleaned path; coverage notes go to `notes`. */
+export function prepare(target: string, work: string, tag: string, withCoverage: boolean, notes: string[] = []): string {
   const src = realpathSync(target);
   for (const d of [`${tag}-san`, `${tag}-clean`, `${tag}-quarantine`, `${tag}-quarantine.quarantine.json`]) rmSync(join(work, d), { recursive: true, force: true });
   const san = join(work, `${tag}-san`);
@@ -52,7 +54,9 @@ export function prepare(target: string, work: string, tag: string, withCoverage:
   foldPath(sanitized, folded);
   if (!withCoverage) return folded;
   const quarantined = join(work, `${tag}-quarantine`);
-  quarantineCopy(folded, coverage(folded), quarantined);
+  const report = coverage(folded);
+  notes.push(...report.notes);
+  quarantineCopy(folded, report, quarantined);
   return isDir ? quarantined : join(quarantined, basename(src));
 }
 
@@ -69,23 +73,26 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
   const ledgerPath = join(opts.work, "ledger.json");
   const real = realpathSync(target);
   const saved = loadLedger(ledgerPath);
+  saved.target ??= real;
   const ledger: Ledger = saved.target === real ? saved : { ...newLedger(), target: real };
+  const notes: string[] = [];
   const s = scan(target);
   const cleaned = s.score > 0;
-  const prepared = cleaned ? prepare(target, opts.work, "a", !!opts.coverage) : target;
-  const rep: RunReport = { tool: "anti-bla/run", target, scan: s, attempts: [], prepared, verdict: cleaned ? "cleaned" : "plain-rea" };
+  const prepared = cleaned ? prepare(target, opts.work, "a", !!opts.coverage, notes) : target;
+  const rep: RunReport = { tool: "anti-bla/run", target, scan: s, attempts: [], prepared, verdict: cleaned ? "cleaned" : "plain-rea", notes };
   if (opts.rea) {
     const first = check(ledger);
     if (!first.ok) return { ...rep, verdict: "capped", reason: first.reason };
-    admit(ledger, treeHash(prepared));
+    if (!admit(ledger, treeHash(prepared))) return { ...rep, verdict: "rea-failed", reason: "already tried these bytes; use a fresh work dir to re-run" };
     let a = runRea(opts.rea, prepared, ledger);
     rep.attempts.push(a);
     if (a.capacityError) {
-      const second = prepare(target, opts.work, "b", hasSandbox() && !realpathSync(target).endsWith(".asar"));
+      const coverageOnRetry = hasSandbox() && !realpathSync(target).endsWith(".asar");
+      const second = prepare(target, opts.work, "b", coverageOnRetry, notes);
       const secondHash = treeHash(second);
       if (ledger.tried.includes(inputHash(secondHash))) {
         rep.verdict = "rea-failed";
-        rep.reason = `capacity error; the retry copy has the same bytes as the copy already tried (${hasSandbox() ? "an ASAR is not covered, or the first copy was already covered" : "no bwrap sandbox, so no coverage"}), so it is not retried`;
+        rep.reason = `capacity error; the retry copy (prepared ${coverageOnRetry ? "with" : "without"} coverage) has the same bytes as the copy already tried, so it is not retried`;
       } else {
         const v = mayRetry(ledger, secondHash);
         if (v.ok && check(ledger).ok) {

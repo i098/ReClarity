@@ -11,7 +11,7 @@ BLA makes a build hard to read for an AI agent. It plants decoy code, floods REA
 - **Scan** the build for BLA trap shapes before the first REA call. Score 0 means plain REA, with no extra cost.
 - **Clean a copy.** Fold opaque predicates, drop decoy entries, strip fuse flood. The original stays unchanged.
 - **Check by running.** Run the build in a sandbox with coverage. Code that never runs is "not run". Only unreferenced never-run code that carries trap words is a "decoy suspect", never evidence.
-- **Guard the budget.** Hard token and time caps per target. One retry after a REA capacity error. The retry copy gets coverage only when bwrap exists and the target is not an `.asar`. If it has the same bytes as the first copy, the retry is skipped and the report says why. The same bytes are never retried.
+- **Guard the budget.** Hard token and time caps per target. One retry after a REA capacity error. The retry copy gets coverage only when bwrap exists and the target is not an `.asar`. If it has the same bytes as the first copy, the retry is skipped and the report says why. The same bytes are never retried: to run a target again, use a fresh work dir.
 
 ## Quick start
 

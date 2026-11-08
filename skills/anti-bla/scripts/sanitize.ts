@@ -112,7 +112,7 @@ function sanitizeData(kind: NonNullable<ReturnType<typeof dataKind>>, src: strin
       const c = cleanPcap(readFileSync(src));
       if (!c) return plain();
       writeFileSync(dst, c.buffer);
-      r.actions.push({ kind: "pcap-flood-dropped", path: src, detail: `${c.dropped} BLA records dropped, ${c.kept} kept${c.kept ? "" : "; no real packets left: BLA discards a capture it cannot read (pcapng) and writes its own, so the original cannot be recovered"}` });
+      r.actions.push({ kind: "pcap-flood-dropped", path: src, detail: `${c.dropped} BLA records dropped, ${c.kept} kept` });
       return;
     }
     case "evm": {
@@ -149,7 +149,14 @@ function copyTree(src: string, dst: string, r: SanitizeReport): void {
   }
   mkdirSync(dirname(dst), { recursive: true });
   if (CONFIG_NAMES.includes(basename(src))) r.actions.push({ kind: "dropped-config", path: src });
-  else if (dataKind(src)) sanitizeData(dataKind(src)!, src, dst, r);
+  else if (dataKind(src)) {
+    try {
+      sanitizeData(dataKind(src)!, src, dst, r);
+    } catch (e) {
+      copyFileSync(src, dst);
+      r.actions.push({ kind: "copied", path: src, detail: `not cleaned: ${(e as Error).message}` });
+    }
+  }
   else if (extname(src) === ".asar") sanitizeAsar(src, dst, r);
   else if (st.size >= MIB && isNativeExecutable(src)) sanitizeBinary(src, dst, r);
   else copyFileSync(src, dst);

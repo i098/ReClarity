@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { cleanApk, findApkDecoys, findDartDecoys, zeroDecoys } from "../scripts/lib/dart.ts";
 import { cleanEvm, cleanEvmHex } from "../scripts/lib/evm.ts";
 import { cleanModel, findModelDecoys } from "../scripts/lib/model.ts";
@@ -11,7 +11,7 @@ import { findHoney } from "../scripts/lib/sqlite.ts";
 import { entryData, readZip, replaceData, writeZip, type ZipEntry } from "../scripts/lib/zip.ts";
 import { sanitize } from "../scripts/sanitize.ts";
 import { scan } from "../scripts/scan.ts";
-import { evmWithFiller, flutterBinary, readFixture, toPcapng } from "./fixtures/make.ts";
+import { evmWithFiller, flutterLookalike, readFixture } from "./fixtures/make.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "antibla-fmt-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -111,50 +111,6 @@ describe("PCAP", () => {
   test("a truncated capture is not cleaned", () => {
     expect(cleanPcap(readFixture("app.bla.pcap").subarray(0, 50))).toBeUndefined();
   });
-
-  describe("pcapng", () => {
-    test("BLA frames in Enhanced Packet Blocks dropped; the real block and the header blocks kept byte for byte", () => {
-      const bla = toPcapng(readFixture("app.bla.pcap"));
-      expect(countShieldRecords(bla)).toBe(8);
-      const c = cleanPcap(bla)!;
-      expect(c.dropped).toBe(8);
-      expect(c.buffer.equals(toPcapng(readFixture("app.pcap")))).toBe(true);
-      expect(countShieldRecords(c.buffer)).toBe(0);
-    });
-
-    test("a pcapng file with no BLA frame, and one whose interface is not Ethernet, are left alone", () => {
-      expect(cleanPcap(toPcapng(readFixture("app.pcap")))).toBeUndefined();
-      expect(countShieldRecords(toPcapng(readFixture("app.bla.pcap"), 101))).toBe(0);
-    });
-
-    test("a block with a wrong trailing length stops the parse; bytes from there on are kept", () => {
-      const good = toPcapng(readFixture("app.bla.pcap"));
-      const bad = Buffer.from(good);
-      bad.writeUInt32LE(0xdead, bad.length - 4);
-      const c = cleanPcap(bad)!;
-      expect(c.dropped).toBe(7);
-      expect(c.buffer.subarray(c.buffer.length - 4).readUInt32LE(0)).toBe(0xdead);
-    });
-
-    test("scan and sanitize handle .pcapng and .cap names", () => {
-      const dir = join(tmp, "ng");
-      put("ng/a.pcapng", toPcapng(readFixture("app.bla.pcap")));
-      put("ng/b.cap", readFixture("app.bla.pcap"));
-      expect(scan(dir).findings.find((f) => f.id === "pcap_flood")?.count).toBe(16);
-      sanitize(dir, join(tmp, "ng-out"));
-      expect(readFileSync(join(tmp, "ng-out/a.pcapng")).equals(toPcapng(readFixture("app.pcap")))).toBe(true);
-      expect(readFileSync(join(tmp, "ng-out/b.cap")).equals(readFixture("app.pcap"))).toBe(true);
-    });
-
-    test("a capture BLA rebuilt from pcapng holds only BLA frames: cleaned to a header, with a note that the original is gone", () => {
-      const bla = readFixture("app.bla.pcap");
-      // BLA throws the input away: its own header, then its own packets (the first record of the fixture is the real one)
-      put("rb/x.pcapng", Buffer.concat([bla.subarray(0, 24), bla.subarray(24 + 16 + 60)]));
-      const r = sanitize(join(tmp, "rb"), join(tmp, "rb-out"));
-      expect(readFileSync(join(tmp, "rb-out/x.pcapng"))).toHaveLength(24);
-      expect(r.actions[0]?.detail).toContain("cannot be recovered");
-    });
-  });
 });
 
 describe("EVM", () => {
@@ -180,24 +136,38 @@ describe("EVM", () => {
 });
 
 describe("Flutter", () => {
-  test("trailer pool and isolate pool zeroed in place; real strings and file size untouched", () => {
-    const { buffer, real } = flutterBinary({ trailer: true, isolate: true });
-    const decoys = findDartDecoys(buffer);
+  // app.bla.flutter.so is BLA 3.1.0's own protectNativeBinary output on app.flutter.so (see fixtures/make.ts)
+  const plain = readFixture("app.flutter.so");
+  const bla = readFixture("app.bla.flutter.so");
+  const GO_BUILDINFO = [1024, 1138]; // BLA's Go build-info plant: not a Dart decoy, so it stays in the clean copy
+
+  test("BLA's trailer pool (66 records, 516 package + 516 dart URIs, 2032 tokens) and isolate pool are found", () => {
+    const decoys = findDartDecoys(bla);
     expect(decoys.map((d) => d.kind).sort()).toEqual(["isolate-pool", "trailer-pool"]);
     const trailer = decoys.find((d) => d.kind === "trailer-pool")!;
     expect(trailer.records).toBe(66);
     expect(trailer.entries).toBe(516 * 2 + 2032);
-    const copy = Buffer.from(buffer);
-    zeroDecoys(copy, decoys);
-    expect(copy.length).toBe(buffer.length);
-    expect(findDartDecoys(copy)).toEqual([]);
-    for (const r of real) expect(copy.toString("latin1", r.at, r.at + r.text.length)).toBe(r.text);
+    expect(trailer.end).toBe(bla.length - 4_723); // the chaff BLA appends after the pool is not Dart
+    const isolate = decoys.find((d) => d.kind === "isolate-pool")!;
+    expect(isolate.records).toBe(0);
+    expect(isolate.start).toBe(2048 + 52); // the plain ELF's own snapshot header at the section start stays
   });
 
-  test("a binary with no BLA plant, and a user pool of real URIs, have no decoys", () => {
-    const { buffer } = flutterBinary();
+  test("zeroing leaves the file size and every other byte of the plain ELF as it was", () => {
+    const decoys = findDartDecoys(bla);
+    const copy = Buffer.from(bla);
+    zeroDecoys(copy, decoys);
+    expect(copy.length).toBe(bla.length);
+    expect(findDartDecoys(copy)).toEqual([]);
+    const inDecoy = (i: number): boolean => decoys.some((d) => i >= d.start && i < d.end) || (i >= GO_BUILDINFO[0]! && i < GO_BUILDINFO[1]!);
+    for (let i = 0; i < plain.length; i++) if (!inDecoy(i)) expect(copy[i]).toBe(plain[i]!);
+    for (const d of decoys) expect(plain.subarray(d.start, Math.min(d.end, plain.length)).every((x) => x === 0)).toBe(true); // nothing the plain input held is zeroed
+  });
+
+  test("the plain ELF, a binary with Dart-like strings, and a user pool of real URIs have no decoys", () => {
+    expect(findDartDecoys(plain)).toEqual([]);
     const pool = Buffer.from(Array.from({ length: 600 }, (_, i) => `package:app_${i}/lib/x.dart`).join("\0") + "\0");
-    expect(findDartDecoys(Buffer.concat([buffer, pool]))).toEqual([]);
+    expect(findDartDecoys(Buffer.concat([flutterLookalike(), pool]))).toEqual([]);
   });
 });
 
@@ -214,7 +184,7 @@ describe("APK", () => {
   });
 
   test("Dart decoys zeroed inside libapp.so; every other entry is byte for byte the same", () => {
-    const { buffer: lib, real } = flutterBinary({ trailer: true });
+    const lib = readFixture("app.bla.flutter.so");
     const apk = apkWith(lib);
     expect(findApkDecoys(apk)).toHaveLength(1);
     const c = cleanApk(apk)!;
@@ -223,17 +193,17 @@ describe("APK", () => {
     const cleaned = entryData(back[1]!);
     expect(cleaned.length).toBe(lib.length);
     expect(findDartDecoys(cleaned)).toEqual([]);
-    for (const r of real) expect(cleaned.toString("latin1", r.at, r.at + r.text.length)).toBe(r.text);
+    expect(cleaned.subarray(0, 1024).equals(lib.subarray(0, 1024))).toBe(true);
     expect(entryData(back[0]!).toString()).toBe("<manifest/>");
     expect(entryData(back[2]!).toString()).toBe("engine");
   });
 
   test("an APK whose libapp.so has no decoys is left alone", () => {
-    expect(cleanApk(apkWith(flutterBinary().buffer))).toBeUndefined();
+    expect(cleanApk(apkWith(flutterLookalike()))).toBeUndefined();
   });
 
   test("scan flags a hardened APK and sanitize writes a clean copy", () => {
-    put("apk/app.apk", apkWith(flutterBinary({ trailer: true }).buffer));
+    put("apk/app.apk", apkWith(readFixture("app.bla.flutter.so")));
     expect(scan(join(tmp, "apk")).findings.map((f) => f.id)).toContain("dart_pool_decoy");
     const out = join(tmp, "apk-out");
     sanitize(join(tmp, "apk"), out);
@@ -243,5 +213,16 @@ describe("APK", () => {
   test("a file that is not a ZIP is a note in the scan, not a crash", () => {
     put("bad/app.apk", "not a zip");
     expect(scan(join(tmp, "bad")).notes.some((n) => n.includes("not a ZIP"))).toBe(true);
+  });
+
+  test("sanitize copies a bad .apk and a corrupt .sqlite unchanged, notes them, and still cleans the rest", () => {
+    put("bad2/app.apk", "not a zip");
+    put("bad2/broken.sqlite", Buffer.concat([readFixture("app.bla.sqlite").subarray(0, 100), Buffer.alloc(4096, 0xff)]));
+    put("bad2/app.pcap", readFixture("app.bla.pcap"));
+    const r = sanitize(join(tmp, "bad2"), join(tmp, "bad2-out"));
+    expect(readFileSync(join(tmp, "bad2-out/app.apk")).toString()).toBe("not a zip");
+    expect(readFileSync(join(tmp, "bad2-out/broken.sqlite")).equals(readFileSync(join(tmp, "bad2/broken.sqlite")))).toBe(true);
+    expect(r.actions.filter((a) => a.kind === "copied" && a.detail?.startsWith("not cleaned:")).map((a) => basename(a.path)).sort()).toEqual(["app.apk", "broken.sqlite"]);
+    expect(readFileSync(join(tmp, "bad2-out/app.pcap")).equals(readFixture("app.pcap"))).toBe(true);
   });
 });

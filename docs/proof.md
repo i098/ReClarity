@@ -46,9 +46,9 @@ What these runs do and do not show:
 
 - **The model, EVM hex and Flutter errors are the capacity errors BLA aims at.** The clean copy removes them. For the models and PCAP, the clean copy of BLA's real output equals the plain input byte for byte (`tests/formats.test.ts`).
 - **SQLite and PCAP did not fail on REA 6.8.0 here.** REA read the hardened files and returned BLA's decoys as evidence (honey tables, DNS names). The 8 MiB tshark limit was not hit: BLA estimates 11.3 MB of tshark JSON for this `bankrupt` file, but REA's `inspect-pcap-capture` summarizes it, and `inspect-packet-capture --fields ip.src --fields ip.dst --fields dns.qry.name --all_matches` also exited 0 on both files. The clean copy still removes the noise.
-- **The Flutter binary is not a real BLA-protected binary.** BLA's `protectNativeBinary` refused the synthetic ELF (REA's own test image, `aotFixtureImage`), so the hardened APK is that image plus BLA's own `buildFlutterPoolExhaustionPayload` output behind BLA's native trailer marker. The mapped `.isolate` pool shape is covered by a test built from BLA's source, not by a REA run.
+- **The Flutter unit fixture is real BLA output.** `tests/fixtures/app.bla.flutter.so` is BLA's `protectNativeBinary` (balanced, seed `fixture-1`) on BLA's `buildMappedGoFlutterElfFixture()` ELF, with the plain ELF beside it. It holds both the trailer pool and the mapped `.isolate` pool. The APK run above used REA's `aotFixtureImage` plus BLA's `buildFlutterPoolExhaustionPayload`, because `protectNativeBinary` refused that image.
 - **EVM `maximum` and `bankrupt` files are real BLA output** (`protectEvmBytecodeBuffer`); the `balanced` and `stealth` fixtures in `tests/fixtures` come from the same function.
-- **Not run:** a real Flutter app, a real model with tensors above a few bytes, a large SQLite database, and REA on a pcapng file. BLA 3.1.0 does not write pcapng: on a pcapng input its output is a classic file of BLA frames only (run on `protectPcapCaptureBuffer`; the original packets are not in it). The pcapng cleaner is tested on BLA's real frames wrapped in pcapng blocks.
+- **Not run:** a real Flutter app, a real model with tensors above a few bytes, a large SQLite database. BLA 3.1.0 does not write pcapng, so only classic libpcap is handled.
 
 ## Not run
 

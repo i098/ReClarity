@@ -5,8 +5,8 @@
 //     snapshot hashes at 64 and the pool at 500 URIs and 2000 tokens.
 //  2. A pool written into a named `.isolate` section, led by `[BLA-FLUTTER-MAPPED]`. BLA overwrote the
 //     real bytes there, so zero is the best a copy can hold.
-// The 52-byte fake header BLA writes in front of the isolate pool is zeroed with it. BLA overwrote the real
-// bytes of that region, so no clean content exists to restore.
+// A snapshot header in front of the isolate pool is kept: BLA leaves a real header in place and plants after it,
+// and a header BLA wrote itself has the same shape, so the two cannot be told apart.
 
 import { FLUTTER_LIB } from "./formats.ts";
 import { entryData, readZip, replaceData, writeZip } from "./zip.ts";
@@ -75,8 +75,7 @@ export function findDartDecoys(b: Buffer): DartDecoy[] {
   }
   for (let at = b.indexOf(MAPPED_MARKER); at >= 0; at = b.indexOf(MAPPED_MARKER, at + 1)) {
     const pool = poolEnd(b, at + MAPPED_MARKER.length, MAPPED_ENTRY);
-    const fake = isFakeRecord(b, at - RECORD);
-    out.push({ kind: "isolate-pool", start: fake ? at - RECORD : at, end: pool.end, records: fake ? 1 : 0, entries: pool.entries });
+    out.push({ kind: "isolate-pool", start: at, end: pool.end, records: 0, entries: pool.entries });
   }
   return out;
 }

@@ -11,10 +11,8 @@ const BY_EXT: Record<string, DataKind> = {
   ".db3": "sqlite",
   ".safetensors": "model",
   ".gguf": "model",
-  // BLA 3.1.0 writes classic libpcap only, whatever the name; pcapng is cleaned too, by magic
+  // BLA 3.1.0 writes classic libpcap only, whatever the name
   ".pcap": "pcap",
-  ".pcapng": "pcap",
-  ".cap": "pcap",
   ".evm": "evm",
   ".bin": "evm",
   ".hex": "evm",

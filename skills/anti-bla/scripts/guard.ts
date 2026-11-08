@@ -12,8 +12,9 @@ const DEFAULT_MAX_TOKENS = 300_000;
 const DEFAULT_MAX_SECONDS = 30 * 60;
 export const MAX_FIXTURES = 200;
 
-/** REA limit messages (src/domain/javascript/javascriptSemanticResourceLimits.ts, asarHeaderAdmission) and BLA's own limit labels. */
-const CAPACITY = /budget exceeded|conservatively bounded|header\/index admission is limited|maximum_[a-z_]+ \(/i;
+/** REA limit messages (src/domain/javascript/javascriptSemanticResourceLimits.ts, asarHeaderAdmission), the data format inspectors
+ * (model nesting, EVM input, Flutter snapshot hashes, SQLite and tshark output) and BLA's own limit labels. */
+const CAPACITY = /budget exceeded|conservatively bounded|header\/index admission is limited|maximum_[a-z_]+ \(|nesting exceeds \d+|exceeds? the retained evidence budget|artifact exceeds \d+ bytes/i;
 export const isCapacityError = (text: string): boolean => CAPACITY.test(text);
 
 /** REA's own error envelope only: stderr, or the error/message of the JSON error object on stdout. Other stdout text is target data. */

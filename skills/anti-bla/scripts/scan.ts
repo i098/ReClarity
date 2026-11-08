@@ -4,8 +4,14 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { openAsar } from "./lib/asar.ts";
+import { findApkDecoys, findDartDecoys } from "./lib/dart.ts";
+import { cleanEvm, cleanEvmHex } from "./lib/evm.ts";
+import { MAX_APK_FILE, MAX_EVM_FILE, MAX_PCAP_FILE, dataKind } from "./lib/formats.ts";
 import { REA_MAX_SENTINELS, findSentinels, isNativeExecutable } from "./lib/fuses.ts";
 import { countStrongMarkers } from "./lib/guard-markers.ts";
+import { findModelDecoys } from "./lib/model.ts";
+import { countShieldRecords } from "./lib/pcap.ts";
+import { findHoney, isSqlite } from "./lib/sqlite.ts";
 import { findSeeds, opaqueValue, parseJs, walk, type AnyNode, type Program } from "./lib/js.ts";
 
 export const BLA_VERSION = "3.1.0";
@@ -44,6 +50,11 @@ const RULES: Record<string, { weight: number; min: number }> = {
   runtime_guard: { weight: 10, min: 1 },
   bait_text: { weight: 15, min: 1 },
   enclave_words: { weight: 5, min: 10 },
+  sqlite_honey: { weight: 40, min: 1 },
+  model_nesting_breaker: { weight: 40, min: 1 },
+  pcap_flood: { weight: 40, min: 1 },
+  evm_trailer: { weight: 40, min: 1 },
+  dart_pool_decoy: { weight: 40, min: 1 },
 };
 export const CONFIG_NAMES = [".blarc", ".blarc.json", "bla.config.json", ".bla-manifest.json"];
 const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST/g;
@@ -196,6 +207,42 @@ function scanAsar(path: string, acc: Acc): void {
   }
 }
 
+/** Data formats: SQLite, model files, PCAP, EVM bytecode, Flutter APK. Read-only; each cleaner checks magic and shape itself. */
+function scanData(kind: NonNullable<ReturnType<typeof dataKind>>, path: string, size: number, acc: Acc): void {
+  switch (kind) {
+    case "sqlite": {
+      if (!isSqlite(path)) return;
+      const h = findHoney(path);
+      acc.add("sqlite_honey", `${path}: ${h.tables.length} honey tables${h.view ? " and view" : ""}`, h.tables.length + (h.view ? 1 : 0));
+      if (h.suspects.length) acc.notes.push(`${path}: tables with "enclave_" in the name kept (not BLA's shape): ${h.suspects.join(", ")}`);
+      return;
+    }
+    case "model": {
+      const d = findModelDecoys(path);
+      if (d?.remove.length) acc.add("model_nesting_breaker", `${path}: ${d.format}, nesting ${d.depth} (REA limit 32), ${d.remove.length} entries`, d.remove.length);
+      return;
+    }
+    case "pcap": {
+      if (size > MAX_PCAP_FILE) return void acc.notes.push(`${path}: over 512 MiB, not scanned`);
+      const n = countShieldRecords(readFileSync(path));
+      acc.add("pcap_flood", `${path}: ${n} BLA records`, n);
+      return;
+    }
+    case "evm": {
+      if (size > MAX_EVM_FILE) return;
+      const buf = readFileSync(path);
+      const hex = cleanEvmHex(buf.toString("latin1"));
+      const r = hex ?? cleanEvm(buf);
+      if (r) acc.add("evm_trailer", `${path}: ${r.trailerBytes} B trailer, ${r.fillerBytes} B filler${hex ? " (hex)" : ""}`);
+      return;
+    }
+    case "apk": {
+      if (size > MAX_APK_FILE) return void acc.notes.push(`${path}: over 1 GiB, not scanned`);
+      for (const f of findApkDecoys(readFileSync(path))) acc.add("dart_pool_decoy", `${path}!${f.lib}: ${f.decoys.length} Dart decoy blocks`, f.decoys.length);
+    }
+  }
+}
+
 function scanFile(path: string, size: number, acc: Acc): void {
   const name = basename(path);
   const ext = extname(name);
@@ -204,6 +251,12 @@ function scanFile(path: string, size: number, acc: Acc): void {
     try {
       if ("bla" in JSON.parse(readFileSync(path, "utf8"))) acc.add("config_file", `${path} ("bla" key)`);
     } catch {}
+  } else if (dataKind(path)) {
+    try {
+      scanData(dataKind(path)!, path, size, acc);
+    } catch (e) {
+      acc.notes.push(`${path}: not scanned, ${e instanceof Error ? e.message : String(e)}`);
+    }
   } else if (ext === ".asar") {
     try {
       scanAsar(path, acc);
@@ -215,9 +268,12 @@ function scanFile(path: string, size: number, acc: Acc): void {
     else scanJs(readFileSync(path, "utf8"), path, acc);
   } else if (size >= 1 << 20 && isNativeExecutable(path)) {
     // shortcut: reads the whole binary into memory; stream it if a 1 GB target ever shows up
-    const s = findSentinels(readFileSync(path));
+    const bin = readFileSync(path);
+    const s = findSentinels(bin);
     const decoys = s.filter((x) => x.decoy).length;
     if (decoys) acc.add("fuse_decoy", `${path}: ${decoys} decoys of ${s.length} sentinels (REA limit ${REA_MAX_SENTINELS})`, decoys);
+    const dart = findDartDecoys(bin);
+    if (dart.length) acc.add("dart_pool_decoy", `${path}: ${dart.length} Dart decoy blocks`, dart.length);
   }
 }
 

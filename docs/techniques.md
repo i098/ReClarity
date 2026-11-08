@@ -2,7 +2,7 @@
 
 Each BLA trap, how ReClarity sees it, how it cleans it, and the REA step it protects. Shapes are pinned to BLA 3.1.0; the long form with weights is in [signatures.md](../skills/anti-bla/references/signatures.md).
 
-JS and Electron are built. Other formats are listed so the gap is visible.
+JS, Electron, SQLite, models, PCAP, EVM and Flutter are built. The other formats are listed so the gap is visible.
 
 | BLA technique | REA step it hits | Seen by (`scan.ts`) | Cleaned by | Status |
 | --- | --- | --- | --- | --- |
@@ -19,7 +19,12 @@ JS and Electron are built. Other formats are listed so the gap is visible.
 | Fuse decoys | sentinel limit (32 per slice) | `fuse_decoy` | `sanitize.ts` zeroes decoy sentinels (wire byte `9`); real blocks stay | built |
 | BLA config files | none | `config_file` | `sanitize.ts` drops them from the copy | built |
 | Embedded source map with bait text | JS evidence | none | `fold-js.ts` strips the `sourceMappingURL` data URL after folding | built |
-| WASM, SQLite, model, Go, Rust, BEAM, PCAP caps | format inspectors | not yet | not yet | after arm C passes |
+| SQLite honey tables and `GENERATED ... VIRTUAL` trap columns | `inspect_sqlite_database` | `sqlite_honey` | `sanitize.ts` (`lib/sqlite.ts`) drops BLA's five honey tables and its view, only when name and full column list match; vacuums the copy; a database with a live `-wal` or `-journal` is copied unchanged | built |
+| Model JSON nesting (safetensors, GGUF) | `inspect_model_artifact` (nesting 32) | `model_nesting_breaker` | `sanitize.ts` (`lib/model.ts`) removes the extra descriptor key (or the GGUF key) that is deeper than 32 and holds BLA's literal note, and the `enclave.*` bait entries; tensor bytes are copied unchanged | built |
+| PCAP flood | `inspect_pcap_capture`, tshark JSON (8 MiB) | `pcap_flood` | `sanitize.ts` (`lib/pcap.ts`) drops frames whose whole shape is BLA's; real frames stay byte for byte; classic pcap only | built |
+| EVM trailer and JUMPDEST filler | `inspect_evm_interface` (4 MiB input) | `evm_trailer` | `sanitize.ts` (`lib/evm.ts`) removes BLA's metadata and the filler run; raw and hex carriers | built |
+| Flutter pool and snapshot-hash decoys | `identify_flutter_build` (64 hashes) | `dart_pool_decoy` | `sanitize.ts` (`lib/dart.ts`, `lib/zip.ts`) zeroes the decoy ranges in a native binary or in `libapp.so` inside an APK (the copy of an APK has no signature) | built |
+| WASM, Go, Rust, BEAM caps | format inspectors | not yet | not yet | planned |
 | Runtime guard (CDP, Frida, `--inspect` detection; self-seal `NODE_OPTIONS` digest) | runtime capture | `runtime_guard` (BLA's own markers: `inspectorObserved`, `cdpShapeBudgetGuard_`, `fridaCaptureSaturator_`, `__puppeteer_evaluation_script__`) | Not cut from the copy. `runtime-guard.ts` runs each entry in the sandbox with nothing attached (twice, to find what varies) and once per probe (`inspect`, `node-options`, `remote-debugging`, `cdp`, `frida`). It reports every channel that differs (stdout, stderr, exit, files, IPC, children, connects, added globals) and the code that ran in only one run. The not-attached run is the observation | built |
 | Python `.pyc` tarpit | PyInstaller route | not yet | `coverage.py` in the sandbox | planned |
 

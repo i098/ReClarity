@@ -28,10 +28,32 @@ Arm C is not equal to arm A:
 - **Measured upper bound.** Removing these blocks by hand from the cleaned copy gave 150165 tokens (A: 138126). This is not shipped: deleting code that ran could change behavior.
 - **Identifier renaming stays.** BLA renames functions. Function names are not recovered, so a name-based recall metric would be 0 in arms B and C.
 
+## Data formats: hardened vs cleaned
+
+Run on 2026-11-08 on this host. REA 6.8.0 (`node scripts/rea.mjs <command> <file> --format json`) and tshark 4.6.4 (unpacked from the Ubuntu package into a temp folder, set with `REA_TSHARK_COMMAND` and `REA_CAPINFOS_COMMAND`). "Hardened" is BLA 3.1.0 output (`dist/shields/formats/*.js`, commit `41345ff`, seed `fixture-1`); "cleaned" is the same file after `sanitize.ts`. One run each; sizes are the length of REA's `normalized_result` JSON.
+
+| Format | REA command | Hardened | Cleaned |
+| --- | --- | --- | --- |
+| SQLite (BLA sample database) | `inspect-sqlite-database` | ok, 9105 characters, five honey tables and the view listed, 18 enclave or BLA words | ok, 2721 characters, only `license_cache`, 1 such word (the file name) |
+| safetensors (nesting 36) | `inspect-model-artifact` | exit 1: "Safetensors JSON nesting exceeds 32 levels" | ok, 2 tensors read |
+| GGUF (nesting 35) | `inspect-model-artifact` | exit 1: "GGUF metadata nesting exceeds 32 array frames" | ok |
+| PCAP, `bankrupt` (1.3 MB, 160 BLA frames) | `inspect-pcap-capture` | ok, 21796 characters, 65 DNS names, 4 endpoints | ok, 1663 characters, 1 DNS name, 2 endpoints |
+| EVM raw, `bankrupt` (4 MiB filler) | `inspect-evm-interface` | ok, 8384891 characters | ok, 2603 characters |
+| EVM hex, `bankrupt` (8 MB text) | `inspect-evm-interface` (hex) | exit 1: "Selected artifact exceeds 4194304 bytes" | ok, 2603 characters |
+| Flutter APK | `identify-flutter-build` | exit 1: "Snapshot hash candidates exceed the retained evidence budget" | ok, one candidate (`65817c30...`), hash identified |
+
+What these runs do and do not show:
+
+- **The model, EVM hex and Flutter errors are the capacity errors BLA aims at.** The clean copy removes them. For the models and PCAP, the clean copy of BLA's real output equals the plain input byte for byte (`tests/formats.test.ts`).
+- **SQLite and PCAP did not fail on REA 6.8.0 here.** REA read the hardened files and returned BLA's decoys as evidence (honey tables, DNS names). The 8 MiB tshark limit was not hit: BLA estimates 11.3 MB of tshark JSON for this `bankrupt` file, but REA's `inspect-pcap-capture` summarizes it, and `inspect-packet-capture --fields ip.src --fields ip.dst --fields dns.qry.name --all_matches` also exited 0 on both files. The clean copy still removes the noise.
+- **The Flutter binary is not a real BLA-protected binary.** BLA's `protectNativeBinary` refused the synthetic ELF (REA's own test image, `aotFixtureImage`), so the hardened APK is that image plus BLA's own `buildFlutterPoolExhaustionPayload` output behind BLA's native trailer marker. The mapped `.isolate` pool shape is covered by a test built from BLA's source, not by a REA run.
+- **EVM `maximum` and `bankrupt` files are real BLA output** (`protectEvmBytecodeBuffer`); the `balanced` and `stealth` fixtures in `tests/fixtures` come from the same function.
+- **Not run:** a real Flutter app, a real model with tensors above a few bytes, a large SQLite database, and pcapng (BLA 3.1.0 does not write it).
+
 ## Not run
 
 - No agent (Claude/Codex) was run on the evidence. "Attacker tokens" and "hidden-test accuracy" from the plan are not measured. Evidence tokens above are REA's own `--token-count`.
-- Other formats (WASM, SQLite, Python, Go, Rust, BEAM, PCAP) are out of scope.
+- WASM, Python, Go, Rust and BEAM are out of scope here.
 - One fixture and one BLA seed. Fuses ran on a hand-made fake Electron binary with BLA's fuse decoy shapes, not a real Electron build.
 - The 300k token cap and 30 minute cap are starting values. Arm C used 618k evidence tokens, which a 300k cap would reject; tune it from more runs.
 

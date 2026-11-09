@@ -9,6 +9,14 @@ const SHELL = new Set(["Bash", "run_shell_command", "shell"]);
 const START = String.raw`^\s*(?:\w+=\S*\s+)*`;
 const RUNNER = new RegExp(START + String.raw`(?:node|nodejs|bun|deno|python3?|java|ruby|perl|php|go run|cargo run|dotnet|wasmtime|wasmer|electron|npx|bash|sh|zsh|source)\s`);
 const MUTATE = new RegExp(START + String.raw`(?:rm|mv|sed\s+-i|tee|truncate|chmod|patch|dd|ln)\s`);
+const COPY = new RegExp(START + String.raw`(?:cp|install)\s+(.*)$`);
+/** Destination of `cp`/`install`: the `-t` value, else the last argument that is not a flag. */
+function copyDest(part: string): string | undefined {
+  const args = part.match(COPY)?.[1]?.trim().split(/\s+/).map((a) => a.replace(/^['"]|['"]$/g, ""));
+  if (!args) return undefined;
+  const t = args.findIndex((a) => a === "-t" || a === "--target-directory");
+  return t >= 0 ? args[t + 1] : args.filter((a) => !a.startsWith("-")).at(-1);
+}
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A piece that starts with one of anti-bla's own tools, in the configured anti-bla folder. */
 const ANTI_BLA = new RegExp(String.raw`^\s*bun\s+\S*${esc(loadConfig().antiBla.replace(/^\.\//, ""))}/scripts/[\w-]+\.ts\b`);
@@ -39,7 +47,9 @@ if (SHELL.has(tool)) {
     const named = cfg.targets.find((t) => [t.replace(/^\.\//, ""), resolve(cfg.root ?? dir, t)].some((n) => new RegExp(String.raw`(?:^|[\s'"=<>(])(?:\./)?${esc(n)}(?=[/\s'"]|$)`).test(part)));
     if (!named || ANTI_BLA.test(part)) continue;
     const e = esc(named);
-    if (MUTATE.test(part) || new RegExp(`>>?\\s*(?:\\./)?${e}(?=[/\\s'"]|$)`).test(part)) deny("target-read-only", `This command would change ${named}. Work on a copy (cp is allowed).`);
+    const dest = copyDest(part);
+    if (dest && inTarget(dest, cfg, dir)) deny("target-read-only", `This command would copy into ${named}. Copying out of a target is allowed; copying in is not.`);
+    if (MUTATE.test(part) || new RegExp(`>>?\\s*(?:\\./)?${e}(?=[/\\s'"]|$)`).test(part)) deny("target-read-only", `This command would change ${named}. Work on a copy.`);
     if (RUNNER.test(part) || new RegExp(`^\\s*(?:\\./)?${e}(?:[/\\s]|$)`).test(part))
       deny("run-in-sandbox", `This command would run ${named} outside the sandbox. A hardened build can hold decoy code. Use: bun ${cfg.antiBla}/scripts/run.ts ${named} --rea "<command with {target}>".`);
   }

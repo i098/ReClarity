@@ -88,6 +88,11 @@ describe("guard (PreToolUse): a target is read-only and never run raw", () => {
     for (const c of ["rm dist/app.js", "sed -i s/a/b/ dist/app.js", "echo x > dist/app.js", "echo x >> dist/app.js", "mv dist/app.js /tmp/x"]) expect(bash(c)).toBe(2);
   });
 
+  test("copying, moving or installing into a target is blocked; the same commands to a non-target stay allowed", () => {
+    for (const c of ["cp evil.js dist/app.js", "cp -r evil dist", "cp -t dist evil.js", "mv evil.js dist/app.js", "install evil.js dist/app.js", "echo x | tee dist/app.js", "echo x > dist/app.js", "echo x >> dist/app.js"]) expect(bash(c)).toBe(2);
+    for (const c of ["cp evil.js src/app.js", "mv evil.js src/app.js", "install evil.js src/app.js", "echo x | tee src/app.js", "echo x > src/app.js", "cp dist/app.js /tmp/x.js"]) expect(bash(c)).toBe(0);
+  });
+
   test("reading a target, copying it out, and anti-bla's own tools are allowed", () => {
     for (const c of ["cat dist/app.js", "grep -n enclave dist/app.js", "find . -name '*.js' -path dist", "cp dist/app.js /tmp/copy.js", "bun skills/anti-bla/scripts/run.ts dist --rea 'node {target}'", "bun skills/anti-bla/scripts/scan.ts dist", "node build.js", "ls dist", "bun skills/anti-bla/scripts/scan.ts dist && cat dist/app.js", "node distant/x.js", "grep node dist/app.js", "rm distant/x.js", "echo x > distant/x"]) expect(bash(c)).toBe(0);
   });

@@ -104,6 +104,12 @@ describe("guard (PreToolUse): a target is read-only and never run raw", () => {
     expect(bash("bun /abs/path/skills/anti-bla/scripts/scan.ts dist")).toBe(0);
   });
 
+  test("a ./dist target is matched by its plain and absolute spellings", () => {
+    const dot = (command: string) => pre("Bash", { command }, { CLARITY_TARGETS: "./dist" }).code;
+    for (const c of ["echo x > dist/a.js", "echo x >> dist/a.js", `echo x > ${join(tmp, "dist/a.js")}`, `echo x >> ${join(tmp, "dist/a.js")}`, "dist/app", `${join(tmp, "dist/app")}`, "cp evil.js dist/app.js"]) expect(dot(c)).toBe(2);
+    for (const c of ["echo x > distant/a.js", "cp dist/app.js /tmp/x.js", "cat dist/app.js"]) expect(dot(c)).toBe(0);
+  });
+
   test("every block is logged", () => {
     pre("Bash", { command: "node dist/app.js" });
     expect(readFileSync(join(tmp, ".reclarity/hooks.jsonl"), "utf8")).toContain('"rule":"run-in-sandbox"');

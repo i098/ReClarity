@@ -110,6 +110,17 @@ describe("guard (PreToolUse): a target is read-only and never run raw", () => {
     for (const c of ["echo x > distant/a.js", "cp dist/app.js /tmp/x.js", "cat dist/app.js"]) expect(dot(c)).toBe(0);
   });
 
+  test("writes into any target are blocked, also from anti-bla pieces and with several targets", () => {
+    const two = (command: string) => pre("Bash", { command }, { CLARITY_TARGETS: "build:dist" }).code;
+    expect(bash(`echo x > ${join(tmp, "dist/a.js")}`)).toBe(2);
+    expect(bash(`echo x >> ${join(tmp, "dist/a.js")}`)).toBe(2);
+    expect(two("cat build/x > dist/y")).toBe(2);
+    expect(two("cat dist/x > src/y")).toBe(0);
+    expect(bash("bun skills/anti-bla/scripts/scan.ts dist > dist/r.txt")).toBe(2);
+    expect(bash("bun skills/anti-bla/scripts/scan.ts dist >> dist/x")).toBe(2);
+    expect(bash("bun skills/anti-bla/scripts/scan.ts dist")).toBe(0);
+  });
+
   test("every block is logged", () => {
     pre("Bash", { command: "node dist/app.js" });
     expect(readFileSync(join(tmp, ".reclarity/hooks.jsonl"), "utf8")).toContain('"rule":"run-in-sandbox"');

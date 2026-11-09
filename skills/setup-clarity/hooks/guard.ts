@@ -46,11 +46,13 @@ if (SHELL.has(tool)) {
   // Judge each piece of a compound command alone: `bun .../scan.ts dist; node dist/app.js` must still block the second.
   for (const part of String(input.command ?? "").split(/&&|\|\||[;|\n]/)) {
     const named = cfg.targets.find((t) => new RegExp(String.raw`(?:^|[\s'"=<>(])(?:\./)?(?:${alt[t]})(?=[/\s'"]|$)`).test(part));
-    if (!named || ANTI_BLA.test(part)) continue;
+    if (!named) continue;
     const e = `(?:${alt[named]})`;
     const dest = copyDest(part);
     if (dest && inTarget(dest, cfg, dir)) deny("target-read-only", `This command would copy into ${named}. Copying out of a target is allowed; copying in is not.`);
-    if (MUTATE.test(part) || new RegExp(`>>?\\s*(?:\\./)?${e}(?=[/\\s'"]|$)`).test(part)) deny("target-read-only", `This command would change ${named}. Work on a copy.`);
+    const redirected = [...part.matchAll(/>>?\s*(\S+)/g)].some((m) => inTarget(m[1].replace(/^['"]|['"]$/g, ""), cfg, dir));
+    if (MUTATE.test(part) || redirected) deny("target-read-only", `This command would change ${named}. Work on a copy.`);
+    if (ANTI_BLA.test(part)) continue;
     if (RUNNER.test(part) || new RegExp(`^\\s*(?:\\./)?${e}(?:[/\\s]|$)`).test(part))
       deny("run-in-sandbox", `This command would run ${named} outside the sandbox. A hardened build can hold decoy code. Use: bun ${cfg.antiBla}/scripts/run.ts ${named} --rea "<command with {target}>".`);
   }

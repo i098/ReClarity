@@ -6,10 +6,12 @@ import { inTarget, loadConfig, log, readInput, root } from "./lib.ts";
 
 const WRITE = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "write_file", "replace", "apply_patch"]);
 const SHELL = new Set(["Bash", "run_shell_command", "shell"]);
-const RUNNER = /(?:^|[\s;&|(`])(?:node|nodejs|bun|deno|python3?|java|ruby|perl|php|go run|cargo run|dotnet|wasmtime|wasmer|electron|npx|bash|sh|zsh|source)\s/;
-/** A piece that starts with one of anti-bla's own tools. */
-const ANTI_BLA = /^\s*bun\s+\S*scripts\/[\w-]+\.ts\b/;
-const MUTATE = /(?:^|[\s;&|(`])(?:rm|mv|sed\s+-i|tee|truncate|chmod|patch|dd|ln)\s/;
+const START = String.raw`^\s*(?:\w+=\S*\s+)*`;
+const RUNNER = new RegExp(START + String.raw`(?:node|nodejs|bun|deno|python3?|java|ruby|perl|php|go run|cargo run|dotnet|wasmtime|wasmer|electron|npx|bash|sh|zsh|source)\s`);
+const MUTATE = new RegExp(START + String.raw`(?:rm|mv|sed\s+-i|tee|truncate|chmod|patch|dd|ln)\s`);
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** A piece that starts with one of anti-bla's own tools, in the configured anti-bla folder. */
+const ANTI_BLA = new RegExp(String.raw`^\s*bun\s+\S*${esc(loadConfig().antiBla.replace(/^\.\//, ""))}/scripts/[\w-]+\.ts\b`);
 
 const i = await readInput();
 const cfg = loadConfig();
@@ -34,11 +36,11 @@ if (WRITE.has(tool)) {
 if (SHELL.has(tool)) {
   // Judge each piece of a compound command alone: `bun .../scan.ts dist; node dist/app.js` must still block the second.
   for (const part of String(input.command ?? "").split(/&&|\|\||[;|\n]/)) {
-    const named = cfg.targets.find((t) => part.includes(t.replace(/^\.\//, "")) || part.includes(resolve(cfg.root ?? dir, t)));
+    const named = cfg.targets.find((t) => [t.replace(/^\.\//, ""), resolve(cfg.root ?? dir, t)].some((n) => new RegExp(String.raw`(?:^|[\s'"=<>(])(?:\./)?${esc(n)}(?=[/\s'"]|$)`).test(part)));
     if (!named || ANTI_BLA.test(part)) continue;
-    const esc = named.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (MUTATE.test(part) || new RegExp(`>>?\\s*(?:\\./)?${esc}`).test(part)) deny("target-read-only", `This command would change ${named}. Work on a copy (cp is allowed).`);
-    if (RUNNER.test(part) || new RegExp(`^\\s*(?:\\./)?${esc}(?:[/\\s]|$)`).test(part))
+    const e = esc(named);
+    if (MUTATE.test(part) || new RegExp(`>>?\\s*(?:\\./)?${e}(?=[/\\s'"]|$)`).test(part)) deny("target-read-only", `This command would change ${named}. Work on a copy (cp is allowed).`);
+    if (RUNNER.test(part) || new RegExp(`^\\s*(?:\\./)?${e}(?:[/\\s]|$)`).test(part))
       deny("run-in-sandbox", `This command would run ${named} outside the sandbox. A hardened build can hold decoy code. Use: bun ${cfg.antiBla}/scripts/run.ts ${named} --rea "<command with {target}>".`);
   }
 }

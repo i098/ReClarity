@@ -14,19 +14,19 @@ const AGENTS = {
   claude: {
     dir: ".claude",
     file: "settings.json",
-    path: (f: string) => `bun "$CLAUDE_PROJECT_DIR/.claude/hooks/${f}"`,
+    path: (f: string) => `bun "$CLAUDE_PROJECT_DIR/.claude/hooks/reclarity/${f}"`,
     events: { pre: ["PreToolUse", WRITES], post: ["PostToolUse", ""], start: ["SessionStart", "startup|resume|clear|compact"] },
   },
   codex: {
     dir: ".codex",
     file: "hooks.json",
-    path: (f: string) => `bun "$(git rev-parse --show-toplevel)/.codex/hooks/${f}"`,
+    path: (f: string) => `bun "$(git rev-parse --show-toplevel)/.codex/hooks/reclarity/${f}"`,
     events: { pre: ["PreToolUse", WRITES], post: ["PostToolUse", ""], start: ["SessionStart", "startup|resume"] },
   },
   gemini: {
     dir: ".gemini",
     file: "settings.json",
-    path: (f: string) => `bun "$(git rev-parse --show-toplevel)/.gemini/hooks/${f}"`,
+    path: (f: string) => `bun "$(git rev-parse --show-toplevel)/.gemini/hooks/reclarity/${f}"`,
     events: { pre: ["BeforeTool", "write_file|replace|run_shell_command"], post: ["AfterTool", ""], start: ["SessionStart", "startup|resume|clear"] },
   },
 } as const;
@@ -50,7 +50,7 @@ const antiBla =
   ["skills", ".claude/skills", ".agents/skills", ".codex/skills", ".gemini/skills"].map((d) => `${d}/anti-bla`).find((d) => existsSync(join(project, d, "scripts/scan.ts"))) ??
   "skills/anti-bla";
 
-const hooksDir = join(project, agent.dir, "hooks");
+const hooksDir = join(project, agent.dir, "hooks", "reclarity");
 mkdirSync(hooksDir, { recursive: true });
 for (const f of FILES) copyFileSync(join(import.meta.dir, f), join(hooksDir, f));
 writeFileSync(join(hooksDir, "config.json"), JSON.stringify({ targets, antiBla, root: project }, null, 2) + "\n");
@@ -58,7 +58,7 @@ writeFileSync(join(hooksDir, "config.json"), JSON.stringify({ targets, antiBla, 
 const cfgPath = join(project, agent.dir, agent.file);
 const settings: Settings = existsSync(cfgPath) ? JSON.parse(readFileSync(cfgPath, "utf8")) : {};
 settings.hooks ??= {};
-const ours = (e: Entry) => e.hooks.some((h) => FILES.some((f) => h.command.includes(`/hooks/${f}`)));
+const ours = (e: Entry) => e.hooks.some((h) => h.command.includes("/hooks/reclarity/"));
 for (const [kind, file] of [["pre", "guard.ts"], ["post", "fence.ts"], ["start", "session.ts"]] as const) {
   const [event, matcher] = agent.events[kind];
   const keep = (settings.hooks[event] ?? []).filter((e) => !ours(e));

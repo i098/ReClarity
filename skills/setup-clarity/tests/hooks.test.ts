@@ -89,7 +89,12 @@ describe("guard (PreToolUse): a target is read-only and never run raw", () => {
   });
 
   test("reading a target, copying it out, and anti-bla's own tools are allowed", () => {
-    for (const c of ["cat dist/app.js", "grep -n enclave dist/app.js", "find . -name '*.js' -path dist", "cp dist/app.js /tmp/copy.js", "bun skills/anti-bla/scripts/run.ts dist --rea 'node {target}'", "bun skills/anti-bla/scripts/scan.ts dist", "node build.js", "ls dist", "bun skills/anti-bla/scripts/scan.ts dist && cat dist/app.js"]) expect(bash(c)).toBe(0);
+    for (const c of ["cat dist/app.js", "grep -n enclave dist/app.js", "find . -name '*.js' -path dist", "cp dist/app.js /tmp/copy.js", "bun skills/anti-bla/scripts/run.ts dist --rea 'node {target}'", "bun skills/anti-bla/scripts/scan.ts dist", "node build.js", "ls dist", "bun skills/anti-bla/scripts/scan.ts dist && cat dist/app.js", "node distant/x.js", "grep node dist/app.js", "rm distant/x.js", "echo x > distant/x"]) expect(bash(c)).toBe(0);
+  });
+
+  test("only anti-bla's own folder is exempt; a project script that names a target is judged", () => {
+    expect(bash("bun scripts/build.ts dist")).toBe(2);
+    expect(bash("bun other/scripts/build.ts dist")).toBe(2);
   });
 
   test("every block is logged", () => {
@@ -119,22 +124,34 @@ describe("install", () => {
     expect(install(p, "--target", "dist").exitCode).toBe(0);
     const s = json(join(p, ".claude/settings.json"));
     expect(s.model).toBe("x");
-    expect(s.hooks.PreToolUse.map((e: any) => e.hooks[0].command)).toEqual(["mine.sh", 'bun "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.ts"']);
+    expect(s.hooks.PreToolUse.map((e: any) => e.hooks[0].command)).toEqual(["mine.sh", 'bun "$CLAUDE_PROJECT_DIR/.claude/hooks/reclarity/guard.ts"']);
     expect(s.hooks.PostToolUse).toHaveLength(1);
     expect(s.hooks.SessionStart).toHaveLength(1);
-    expect(json(join(p, ".claude/hooks/config.json")).targets).toEqual(["dist"]);
+    expect(json(join(p, ".claude/hooks/reclarity/config.json")).targets).toEqual(["dist"]);
+  });
+
+  test("a user's own hooks/guard.ts and its settings entry survive install", () => {
+    const p = join(tmp, "proj-own");
+    mkdirSync(join(p, ".claude/hooks"), { recursive: true });
+    writeFileSync(join(p, ".claude/hooks/guard.ts"), "// mine\n");
+    writeFileSync(join(p, ".claude/hooks/lib.ts"), "// mine\n");
+    writeFileSync(join(p, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: 'bun "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.ts"' }] }] } }));
+    expect(install(p, "--target", "dist").exitCode).toBe(0);
+    expect(readFileSync(join(p, ".claude/hooks/guard.ts"), "utf8")).toBe("// mine\n");
+    expect(readFileSync(join(p, ".claude/hooks/lib.ts"), "utf8")).toBe("// mine\n");
+    expect(json(join(p, ".claude/settings.json")).hooks.PreToolUse.map((e: any) => e.hooks[0].command)).toEqual(['bun "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.ts"', 'bun "$CLAUDE_PROJECT_DIR/.claude/hooks/reclarity/guard.ts"']);
   });
 
   test("the installed copy works on its own, with targets from its config.json", () => {
     const p = join(tmp, "proj-claude");
-    const r = run("guard.ts", { cwd: p, hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "dist/a.js" } }, {}, join(p, ".claude/hooks"));
+    const r = run("guard.ts", { cwd: p, hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "dist/a.js" } }, {}, join(p, ".claude/hooks/reclarity"));
     expect(r.code).toBe(2);
   });
 
   test("a target path is judged from the project root, not from the agent's cwd", () => {
     const p = join(tmp, "proj-claude");
     mkdirSync(join(p, "sub"), { recursive: true });
-    const r = run("guard.ts", { cwd: join(p, "sub"), hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: join(p, "dist/a.js") } }, {}, join(p, ".claude/hooks"));
+    const r = run("guard.ts", { cwd: join(p, "sub"), hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: join(p, "dist/a.js") } }, {}, join(p, ".claude/hooks/reclarity"));
     expect(r.code).toBe(2);
   });
 

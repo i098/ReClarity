@@ -100,6 +100,8 @@ describe("guard (PreToolUse): a target is read-only and never run raw", () => {
   test("only anti-bla's own folder is exempt; a project script that names a target is judged", () => {
     expect(bash("bun scripts/build.ts dist")).toBe(2);
     expect(bash("bun other/scripts/build.ts dist")).toBe(2);
+    expect(bash("bun myskills/anti-bla/scripts/scan.ts dist")).toBe(2);
+    expect(bash("bun /abs/path/skills/anti-bla/scripts/scan.ts dist")).toBe(0);
   });
 
   test("every block is logged", () => {

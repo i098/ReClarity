@@ -19,7 +19,7 @@ function copyDest(part: string): string | undefined {
 }
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A piece that starts with one of anti-bla's own tools, in the configured anti-bla folder. */
-const ANTI_BLA = new RegExp(String.raw`^\s*bun\s+\S*${esc(loadConfig().antiBla.replace(/^\.\//, ""))}/scripts/[\w-]+\.ts\b`);
+const ANTI_BLA = new RegExp(String.raw`^\s*bun\s+(?:\S*/)?${esc(loadConfig().antiBla.replace(/^\.\//, ""))}/scripts/[\w-]+\.ts\b`);
 
 const i = await readInput();
 const cfg = loadConfig();

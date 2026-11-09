@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question
+    url: https://github.com/i098/ReClarity/blob/main/docs/usage.md
+    about: Read the usage guide first. Open a bug report if it does not answer your question.
+  - name: Security report
+    url: https://github.com/i098/ReClarity/security/advisories/new
+    about: Report a vulnerability in private. Do not open an issue.

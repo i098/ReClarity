@@ -2,6 +2,7 @@
   "name": "anti-bla",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "acorn": "8.19.0"

@@ -216,7 +216,7 @@ Columns: **Scan** is a finding that anti-bla `scan.ts` gives on the sample (a sa
 | Every BLA sample is flagged and names `scan.ts` as next step | fence | pass |
 | Write or patch into a target blocked (also `..`, absolute path, other cwd); `distant/` is not `dist/` | guard | pass |
 | Raw run of a target blocked, message names `run.ts` | guard | pass |
-| `rm`, `sed -i`, `mv`, `>`, `>>` on a target blocked | guard | pass |
+| `rm`, `sed -i`, `mv`, `tee`, `>`, `>>` on a target blocked; `cp` and `install` into a target blocked | guard | pass |
 | `cat`, `grep`, `cp` out, and anti-bla's own tools allowed | guard | pass |
 | Installer: keeps the user's hooks, is idempotent, works from the installed copy, codex and gemini event names | install | pass |
 | Cleaned copy of a `--llm-directives` build still holds the directive as data, and `run.ts` fences the output | `bla322.test.ts` | pass |

@@ -50,7 +50,7 @@ if (SHELL.has(tool)) {
     const e = `(?:${alt[named]})`;
     const dest = copyDest(part);
     if (dest && inTarget(dest, cfg, dir)) deny("target-read-only", `This command would copy into ${named}. Copying out of a target is allowed; copying in is not.`);
-    const redirected = [...part.matchAll(/>>?\s*(\S+)/g)].some((m) => inTarget(m[1].replace(/^['"]|['"]$/g, ""), cfg, dir));
+    const redirected = [...part.matchAll(/>>?\s*(\S+)/g)].some((m) => inTarget((m[1] ?? "").replace(/^['"]|['"]$/g, ""), cfg, dir));
     if (MUTATE.test(part) || redirected) deny("target-read-only", `This command would change ${named}. Work on a copy.`);
     if (ANTI_BLA.test(part)) continue;
     if (RUNNER.test(part) || new RegExp(`^\\s*(?:\\./)?${e}(?:[/\\s]|$)`).test(part))

@@ -47,3 +47,7 @@ JS markers are seed-random: BLA 3.1.0 emits no fixed `_bla_` names in JS. Detect
 ## Not handled yet
 
 - Shapes for EVM, PCAP and Flutter were read from BLA 3.1.0 source and run on BLA's own `dist` output; the bankrupt-size parts were generated with BLA's own functions. BLA 3.1.0 does not write pcapng. The Flutter fixture is BLA's own `protectNativeBinary` output on BLA's `buildMappedGoFlutterElfFixture()`; zeroing its Dart decoys leaves every other byte of the plain ELF, except BLA's Go build-info plant. The model, PCAP and EVM clean copies of BLA's real output equal the plain input byte for byte; the SQLite copy is vacuumed, so it does not.
+
+## BLA 3.2.2 text markers
+
+Code shapes above are unchanged. 3.2.2 adds text. `scan.ts` reports it as `agent_directive` (`<system-reminder>`, `<|im_start|>`, the alignment canary GUID), `shield_marker` (`[BLA-*]` tags, `BLASystemDiagnostic_n`, canary credentials in `.ptx`, `.plist`, `.map`, `.uf2` and `.class` files) and the extra `bait_text` words (`EVIDENCE-LEDGER-ANCHOR`, `TPM-PCR-QUOTE`, `NITRO-VSOCK-DISPATCH`, `SEALED-SESSION-TICKET`, `SEALED-FSM`). A forged `\n\nHuman:` turn is flagged by the fence hook (setup-clarity `hooks/lib.ts`), not by `scan.ts`. Samples: `tests/fixtures/bla322/`, rebuilt with `regen.sh`.

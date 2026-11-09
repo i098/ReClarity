@@ -27,6 +27,14 @@ bun skills/anti-bla/scripts/runtime-guard.ts <target>   # JS, Electron main or .
 
 Tools: `scan`, `sanitize`, `fold-js`, `coverage`, `runtime-guard`, `guard`, `run`, `bench`. See [architecture.md](architecture.md). Rules for the agent: [SKILL.md](../skills/anti-bla/SKILL.md).
 
+## Hooks (setup-clarity)
+
+```bash
+bun skills/setup-clarity/hooks/install.ts --target dist [--agent claude|codex|gemini]
+```
+
+Installs `guard`, `fence` and `session` hooks that enforce the anti-bla rules. See [SKILL.md](../skills/setup-clarity/SKILL.md).
+
 ## When REA runs call the skill
 
 - A REA capacity error (`budget exceeded`, `conservatively bounded`, ASAR header or index limit, fuse sentinel limit).

@@ -17,6 +17,7 @@ import { countBeamDecoys } from "./lib/beam.ts";
 import { REA_MAX_GO_BUILDINFO, REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
 import { findWasmDecoys, parseSections } from "./lib/wasm.ts";
 import { pycDecoyNames, tarpitDecoyCount } from "./lib/pytarpit.ts";
+import { DIRECTIVE } from "./lib/trap.ts";
 import { extractBundle, isPyInstaller } from "./lib/pybox.ts";
 
 export const BLA_VERSION = "3.1.0";
@@ -54,6 +55,8 @@ const RULES: Record<string, { weight: number; min: number }> = {
   decoy_ipc: { weight: 10, min: 1 },
   runtime_guard: { weight: 10, min: 1 },
   bait_text: { weight: 15, min: 1 },
+  agent_directive: { weight: 15, min: 1 },
+  shield_marker: { weight: 25, min: 1 },
   enclave_words: { weight: 5, min: 10 },
   sqlite_honey: { weight: 40, min: 1 },
   model_nesting_breaker: { weight: 40, min: 1 },
@@ -70,7 +73,10 @@ const RULES: Record<string, { weight: number; min: number }> = {
   pyc_decoy_code: { weight: 40, min: 3 },
 };
 export const CONFIG_NAMES = [".blarc", ".blarc.json", "bla.config.json", ".bla-manifest.json"];
-export const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST/g;
+export const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST|EVIDENCE-LEDGER-ANCHOR|TPM-PCR-QUOTE|NITRO-VSOCK-DISPATCH|SEALED-SESSION-TICKET|SEALED-FSM/g;
+/** BLA 3.2 text formats (PTX, plist, source map, UF2, JVM class) carry a shield tag, a diagnostic key or a canary credential. They have no code shape to match, so the marker is the finding. */
+const SHIELD_MARKER = /\[BLA-[A-Z0-9]+(?:-[A-Z0-9]+)*[\]:]|BLASystemDiagnostic_\d|PROTECTED_CANARY_CREDENTIAL|bla_canary_synthetic_|AKIAIOSFODNN7EXAMPLE/g;
+const TEXT_EXTS = [".ptx", ".plist", ".map", ".uf2", ".class"];
 const ENCLAVE = /enclave|attestation|tpm2_|nitroenclave|vsock|hardware-sealed/gi;
 const DECOY_IPC = /delegatedToEnclave\s*:\s*true|fallbackStub\s*:\s*true/g;
 const MAX_JS = 16 * 1024 * 1024;
@@ -139,6 +145,7 @@ function scanRuns(body: AnyNode[], acc: Acc, label: string): void {
 
 function scanJs(src: string, label: string, acc: Acc): void {
   acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
+  acc.add("agent_directive", label, src.match(DIRECTIVE)?.length ?? 0);
   acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
   acc.add("decoy_ipc", label, src.match(DECOY_IPC)?.length ?? 0);
   acc.add("runtime_guard", label, countStrongMarkers(src));
@@ -205,6 +212,7 @@ function scanJs(src: string, label: string, acc: Acc): void {
 function scanPy(src: string, label: string, acc: Acc): void {
   acc.add("python_tarpit", label, tarpitDecoyCount(src));
   acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
+  acc.add("agent_directive", label, src.match(DIRECTIVE)?.length ?? 0);
   acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
 }
 
@@ -213,6 +221,7 @@ function scanPyc(bytes: Buffer, label: string, acc: Acc): void {
   const text = bytes.toString("latin1");
   acc.add("pyc_decoy_code", label, pycDecoyNames(text).size);
   acc.add("bait_text", label, text.match(BAIT)?.length ?? 0);
+  acc.add("agent_directive", label, text.match(DIRECTIVE)?.length ?? 0);
 }
 
 /** A PyInstaller bundle: unpack it in the sandbox and read every .pyc inside as a lone .pyc. Without bwrap or the extractor the bundle is not read, and the note says why. */
@@ -315,6 +324,13 @@ function scanNative(bytes: Buffer, path: string, acc: Acc): void {
   if (go.length) acc.add("go_buildinfo_flood", go[0]!.plantEnd >= 0 ? `${path}: BLA Go plant marker after build info at ${go[0]!.offset}` : `${path}: Go build info claims ${go[0]!.claimed} B (REA limit ${REA_MAX_GO_BUILDINFO})`, go.length);
 }
 
+function scanText(src: string, label: string, acc: Acc): void {
+  acc.add("shield_marker", label, src.match(SHIELD_MARKER)?.length ?? 0);
+  acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
+  acc.add("agent_directive", label, src.match(DIRECTIVE)?.length ?? 0);
+  acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
+}
+
 function scanFile(path: string, size: number, acc: Acc): void {
   const name = basename(path);
   const ext = extname(name);
@@ -323,6 +339,9 @@ function scanFile(path: string, size: number, acc: Acc): void {
     try {
       if ("bla" in JSON.parse(readFileSync(path, "utf8"))) acc.add("config_file", `${path} ("bla" key)`);
     } catch {}
+  } else if (TEXT_EXTS.includes(ext)) {
+    if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
+    else scanText(readFileSync(path, "latin1"), path, acc);
   } else if (size <= MAX_BIN && isNativeExecutable(path)) {
     // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
     const bin = readFileSync(path);

@@ -20,6 +20,8 @@ npx skills add i098/ReClarity --skill anti-bla
 
 Needs [Bun](https://bun.sh) and, for coverage, `bwrap`. See [docs/usage.md](docs/usage.md).
 
+**Agents:** follow [setup.md](setup.md) to install the tools, run the tests and install the skill.
+
 ## Run
 
 ```bash
@@ -33,3 +35,11 @@ bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-jav
 - [Proof](docs/proof.md): A/B/C runs on a BLA 3.1.0 hardened sample.
 - [Risks](docs/risks.md): what ReClarity refuses and why.
 - [Architecture](docs/architecture.md): flow and tools.
+
+## Contribute
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report a vulnerability as in [SECURITY.md](SECURITY.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE)

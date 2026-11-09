@@ -2,6 +2,7 @@
   "name": "reclarity",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Anti-BLA: keeps REA working on BLA-hardened builds",
   "type": "module",
   "scripts": {

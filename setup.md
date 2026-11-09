@@ -22,11 +22,11 @@ bun install
 ## 3. Run the tests
 
 ```bash
-bun test
+bun test --timeout 120000
 bun run typecheck
 ```
 
-Both commands must exit 0. The first coverage test builds a Python venv in `~/.cache/anti-bla` and needs the network once.
+Both commands must exit 0. The first coverage and PyInstaller tests build Python venvs in `~/.cache/anti-bla` and need the network once. The long timeout covers that cold-cache build.
 
 ## 4. Install the skill
 

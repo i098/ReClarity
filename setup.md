@@ -1,6 +1,6 @@
 # Setup (for agents)
 
-Set up ReClarity from a clean Linux or macOS machine. Run each step in order. Stop at the first failure.
+Set up ReClarity from a clean Debian or Ubuntu machine. Run each step in order. Stop at the first failure.
 
 ## 1. Install the tools
 
@@ -10,7 +10,7 @@ sudo apt-get install -y bubblewrap python3   # Debian or Ubuntu; provides bwrap
 bun --version && bwrap --version && python3 --version
 ```
 
-`bwrap` is only for the coverage step. It runs on Linux only. `python3` is only for Python targets.
+`bwrap` is only for the coverage step. `python3` is only for Python targets.
 
 ## 2. Install the dependencies
 

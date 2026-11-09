@@ -5,12 +5,12 @@ Set up ReClarity from a clean Debian or Ubuntu machine. Run each step in order. 
 ## 1. Install the tools
 
 ```bash
+sudo apt-get update && sudo apt-get install -y curl git unzip bubblewrap python3   # provides bwrap
 curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH"
-sudo apt-get install -y bubblewrap python3   # Debian or Ubuntu; provides bwrap
 bun --version && bwrap --version && python3 --version
 ```
 
-`bwrap` is only for the coverage step. `python3` is only for Python targets.
+`bwrap` sandboxes the coverage, runtime-guard and Python build steps. It runs on Linux only. `python3` is only for Python targets.
 
 ## 2. Install the dependencies
 

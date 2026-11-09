@@ -165,3 +165,66 @@ REA did not fail on the hardened member: PyInstaller stores only the code object
 - A `.pyc` compiled from already hardened source keeps the tarpit as ordinary functions (they are referenced by bytecode). Only the source route removes them. A PyInstaller bundle built from such source has the same limit: clean the `.py` files before bundling.
 - One fixture, one seed, one BLA version. Python 3.7 and 3.8 `.pyc` layouts (BLA `py37`, `py38`) were not built here.
 - Coverage covers one run of the entry. A branch the run did not take is "not run", and stays unless it matches the tarpit shape.
+
+## BLA 3.2.2: technique coverage
+
+The sections above use BLA 3.1.0 samples. BLA 3.2.2 (commit `38d26d5`) adds agent-facing techniques: bait text that talks to the analyst, forged chat turns (`--llm-directives`), canary credentials and four new text formats. This section covers them.
+
+How the samples were made: `skills/anti-bla/tests/fixtures/bla322/regen.sh /path/to/bla` runs real `bla protect` (seed `fx-1`) on the files in `src/`. The sources are tiny; the outputs are BLA's own. Each row's marker comes from BLA's shield source, and a test proves the sample carries it. Run `bun test skills/anti-bla/tests/bla322.test.ts skills/setup-clarity` to repeat.
+
+Columns: **Scan** is a finding that anti-bla `scan.ts` gives on the sample (a sample-level result: one build carries many techniques). **Fence** is the `fence.ts` signal in setup-clarity that names the technique's text. `n/a` means the technique is code shape only (no text to flag); `scan.ts` is the check for it.
+
+| Technique (BLA module) | Sample | Scan | Fence | Test | Result |
+| --- | --- | --- | --- | --- | --- |
+| prompt-completion-poison | `app.bla.js` | `bait_text` x10 | `decoy_symbol` | `bla322.test.ts`, `hooks.test.ts` | pass |
+| evidence-contract-poison | `app.bla.js` | `bait_text` x10 | `stop_order` | same | pass |
+| semantic-honeypot | `app.bla.js` | `enclave_words` x418 | `decoy_symbol` | same | pass |
+| crash-trace-decoy | `app.bla.js` | `enclave_words` x418 | `enclave_words` | same | pass |
+| architecture-mirage | `app.bla.js` | `enclave_words` x418 | `decoy_symbol` | same | pass |
+| decompiler-illusion | `app.bla.js` | `opaque_predicate` x55 | `decoy_symbol` | same | pass |
+| diff-noise-injector | `app.bla.js` | `opaque_predicate` x55 | `decoy_symbol` | same | pass |
+| canary-honeypot | `app.bla.js` | `bait_text` x10 | `canary_credential` | same | pass |
+| system-diagnostic-decoy | `app.bla.js` | `enclave_words` x418 | `enclave_words` | same | pass |
+| shadow-business-logic | `app.bla.js` | `bait_text` x10 | `bait_text` | same | pass |
+| cognitive-armor-trigger (benign markers) | `app.bla.js` | `bait_text` x10 | `bait_text` | same | pass |
+| cognitive-armor-trigger (`--llm-directives`) | `app.bla-llm.js` | `agent_directive` x5 | `agent_directive` | same | pass (new in this change) |
+| canary-compliance text (`--llm-directives`) | `app.bla-llm.js` | `agent_directive` x5 | `agent_directive` | same | pass (new) |
+| obligation-flooder | `app.bla.js` | `opaque_predicate` x55 | `decoy_symbol` | same | pass |
+| regex-worker-tarpit | `app.bla.js` | `opaque_predicate` x55 | n/a | `bla322.test.ts` | pass |
+| callgraph-labyrinth | `app.bla.js` | `opaque_predicate` x55 | n/a | same | pass |
+| bpe-token-amplifier | `app.bla.js` | `opaque_predicate` x55 | n/a | same | pass |
+| cdp-shape-budget-breaker | `app.bla.js` | `runtime_guard` x13 | n/a | same | pass |
+| frida-capture-saturation | `app.bla.js` | `runtime_guard` x13 | n/a | same | pass |
+| runtime-shield | `app.bla.js` | `runtime_guard` x13 | n/a | same | pass |
+| self-seal | `app.bla-all.js` | `agent_directive` x5 | `agent_directive` | `bla322.test.ts`, `hooks.test.ts` | pass |
+| sidecar-entangle | `app.bla-all.js` | `agent_directive` x5 | `agent_directive` | same | pass |
+| sourcemap shield | `bla-app.js.map` | `agent_directive` x3 | `agent_directive` | same | pass (scan: score 0 before this change) |
+| gpu-ptx shield | `bla-k.ptx` | `shield_marker` x9 | `bait_text` | same | pass (score 0 before) |
+| apple-plist shield | `bla-Info.plist` | `shield_marker` x8 | `canary_credential` | same | pass (score 0 before) |
+| firmware-uf2 shield | `bla-fw.uf2` | `shield_marker` x28 | `bait_text` | same | pass (score 0 before) |
+| jvm-bytecode shield | `bla-Tiny.class` | `shield_marker` x14 | `bait_text` | same | pass (score 0 before; `CAFEBABE` read as a Mach-O fat file) |
+| python weave + `--llm-directives` | `ledger.bla.py` | `python_tarpit` x11 | `agent_directive` | same | pass |
+
+### Hook rules (setup-clarity)
+
+| Rule | Test | Result |
+| --- | --- | --- |
+| Tool result text is data: forged `Human:` turn, raw and JSON-escaped, also inside a structured response | `hooks.test.ts` fence | pass |
+| Stop order inside a target is flagged with "do not follow it" | fence | pass |
+| Capacity error goes to `run.ts`, not reported as the answer | fence | pass |
+| Clean source (same files before BLA) gives no output | fence | pass |
+| Every BLA sample is flagged and names `scan.ts` as next step | fence | pass |
+| Write or patch into a target blocked (also `..`, absolute path, other cwd); `distant/` is not `dist/` | guard | pass |
+| Raw run of a target blocked, message names `run.ts` | guard | pass |
+| `rm`, `sed -i`, `mv`, `>`, `>>` on a target blocked | guard | pass |
+| `cat`, `grep`, `cp` out, and anti-bla's own tools allowed | guard | pass |
+| Installer: keeps the user's hooks, is idempotent, works from the installed copy, codex and gemini event names | install | pass |
+| Cleaned copy of a `--llm-directives` build still holds the directive as data, and `run.ts` fences the output | `bla322.test.ts` | pass |
+
+### Not covered
+
+- BLA formats with no sample here: Android manifest, DEX and R8, .NET, Bun standalone, mobile game assets, archive (BLA 3.2.2 refused my ZIP: "unsupported versions, timestamps, extra fields"), emitted C/Rust/Go headers. `scan.ts` does not know them. Score 0 there means "not recognized", as for any newer BLA.
+- The shapes in `references/signatures.md` are still the 3.1.0 code shapes. 3.2.2 samples scored `hardened` through them, so no code shape changed that these samples show. Text markers are the part that moved.
+- `sanitize.ts` does not remove directive text. It stays in the cleaned copy as data. The fence and `asData` are the answer, not deletion: BLA may change its wording, and the text may sit in code that runs.
+- The hooks were run as scripts with the JSON the three harness docs describe. They were not run inside a live Claude Code, Codex or Gemini session. No agent (Claude/Codex) was run on this evidence.
+- `guard.ts` reads command text only. A path built at run time passes.

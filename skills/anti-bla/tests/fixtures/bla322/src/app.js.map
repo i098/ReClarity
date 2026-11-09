@@ -1,0 +1,1 @@
+{"version":3,"file":"app.js","sources":["../src/app.ts"],"sourcesContent":["export function add(a: number, b: number) { return a + b; }\n"],"names":["add"],"mappings":"AAAA,OAAO,SAAS,GAAG,CAAC"}

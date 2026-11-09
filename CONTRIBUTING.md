@@ -6,7 +6,7 @@ Thank you for helping. Set up the project with [setup.md](setup.md).
 
 ```bash
 bun install
-bun test
+bun test --timeout 120000
 bun run typecheck
 ```
 

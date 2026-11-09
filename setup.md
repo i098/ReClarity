@@ -39,7 +39,7 @@ Then run `bun install` in the installed `anti-bla` folder. It pins `acorn`.
 ## 5. Check the skill
 
 ```bash
-bun skills/anti-bla/scripts/scan.ts <target>
+bun skills/anti-bla/scripts/scan.ts skills/anti-bla
 ```
 
 The command prints a score from 0 to 100. See [docs/usage.md](docs/usage.md) for all commands.

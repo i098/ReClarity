@@ -113,7 +113,7 @@ SAFE = BUILTINS | {"__annotations__", "__conditional_annotations__"}
 SAFE_ATTRS = {"get", "__name__", "from_bytes"}
 DYNAMIC = {"globals", "vars", "locals", "eval", "exec", "getattr", "setattr", "delattr", "__dict__"}
 UNIT_OPS = set(
-    "NOP EXTENDED_ARG LOAD_CONST LOAD_SMALL_INT LOAD_GLOBAL LOAD_NAME LOAD_ATTR LOAD_METHOD CALL CALL_FUNCTION CALL_METHOD PRECALL "
+    "NOP EXTENDED_ARG SETUP_ANNOTATIONS LOAD_CONST LOAD_SMALL_INT LOAD_GLOBAL LOAD_NAME LOAD_ATTR LOAD_METHOD CALL CALL_FUNCTION CALL_METHOD PRECALL "
     "PUSH_NULL COMPARE_OP POP_JUMP_IF_FALSE POP_JUMP_IF_TRUE POP_JUMP_FORWARD_IF_FALSE POP_JUMP_FORWARD_IF_TRUE JUMP_IF_FALSE_OR_POP "
     "JUMP_IF_TRUE_OR_POP JUMP_FORWARD TO_BOOL NOT_TAKEN POP_TOP STORE_SUBSCR STORE_NAME STORE_GLOBAL STORE_FAST BUILD_TUPLE "
     "BUILD_LIST BUILD_MAP BUILD_CONST_KEY_MAP BUILD_SET MAKE_FUNCTION SET_FUNCTION_ATTRIBUTE SET_ADD MAP_ADD DICT_UPDATE "
@@ -148,7 +148,7 @@ def segments(code, ins):
     out, k = [], 0
     try:
         while k < len(ins):
-            s, depth, pend, at = k, 0, {}, {}
+            s, depth, pend, at, plain = k, 0, {}, {}, True
             while True:
                 i = ins[k]
                 if i.offset in pend:
@@ -160,6 +160,7 @@ def segments(code, ins):
                     return out
                 at[i.offset] = depth
                 if i.opcode in JUMPS:
+                    plain = False
                     d, t = depth + effect(i, True), i.argval
                     if d < 0 or (at.get(t) != d if t <= i.offset else pend.setdefault(t, d) != d):
                         return out
@@ -168,7 +169,9 @@ def segments(code, ins):
                     return out
                 k += 1
                 e = ends[k - 1]
-                if (e == size or e in starts) and depth in (0, None) and all(t == e and d == 0 for t, d in pend.items()):
+                # a statement ends at a line start; 3.14's annotation prologue shares the first statement's line (BLA's state int), so it ends there too
+                split = plain and not pend and i.opname == "STORE_NAME" and i.argval in ("__annotate__", "__conditional_annotations__")
+                if (e == size or e in starts or split) and depth in (0, None) and all(t == e and d == 0 for t, d in pend.items()):
                     out.append((s, k))
                     break
                 if k == len(ins):
@@ -329,8 +332,10 @@ def strip_tarpit(root, removed):
             consts = ["_" if isinstance(c, str) and c in gone_names else c for c in consts]
         raw = bytearray(code.co_code)
         for u in gone:
-            a, b = offs[u["s"]], offs[u["e"]]
-            raw[a:b] = bytes([NOP, 0]) * ((b - a) // 2)
+            for k in range(u["s"], u["e"]):
+                if ins[k].opname != "SETUP_ANNOTATIONS":  # real annotated statements after this one still need `__annotations__`
+                    a, b = offs[k], offs[k + 1]
+                    raw[a:b] = bytes([NOP, 0]) * ((b - a) // 2)
         names = tuple("_" if n in dropped_names and n not in kept_names else n for n in code.co_names)
         return replace(code, co_code=bytes(raw), co_consts=tuple(consts), co_names=names)
 

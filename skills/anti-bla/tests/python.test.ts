@@ -255,6 +255,32 @@ describe.skipIf(!sandboxWorks)(".pyc decoys", () => {
       });
     }
 
+    // BLA 3.2.2 weaves the tarpit into real functions (`if <opaque>: _ = decoy(..)`), adds docstrings, nested defs and try blocks.
+    // Both sources are real `bla protect` output (bla322/regen.sh); expected names are counted from the source text.
+    describe("BLA 3.2.2 sources", () => {
+      const PLAIN_OUT = "51.0\nTrue\n";
+      const tarpitIn = (src: string): number => new Set([...src.matchAll(/^(?:def (\w+_[0-9a-f]{4})\(|(\w+_[0-9A-F]{4})(?::| =))/gm)].map((m) => m[1] ?? m[2])).size;
+      const honeyIn = (src: string): number => (src.match(/^(?:def probe_canary_honeypot|(?:CANARY_TOKENS|AMBIGUOUS_TRANSPORT|CONFLICTING_QUERY|SYSTEM_DIAGNOSTICS|ALIGNMENT_EVAL_CANARY_GUID|COGNITIVE_ARMOR_CORPUS) =)/gm) ?? []).length;
+      for (const sample of ["ledger.bla.py", "ledger.bankrupt.bla.py"]) {
+        const src = readFileSync(join(FIXTURES, "bla322", sample), "utf8");
+        for (const v of ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]) {
+          const py = Bun.which(`python${v}`);
+          test.skipIf(!py)(`${sample} on python${v}: every tarpit name goes and the program prints what the plain one prints`, () => {
+            const hard = compile(py!, src, `t322-${sample}-${v}`);
+            const out = join(tmp, `t322-${sample}-${v}.out.pyc`);
+            const r = cleanPyc(hard, out);
+            if (r.kind !== "cleaned") throw new Error(r.why);
+            expect(r.removed.length).toBe(tarpitIn(src) + honeyIn(src));
+            expect(runPy(py!, hard)).toBe(PLAIN_OUT);
+            expect(runPy(py!, out)).toBe(PLAIN_OUT);
+            const text = readFileSync(out).toString("latin1");
+            expect(text).not.toMatch(/enclave|attestation|canary/i);
+            expect(scan(out).score).toBe(0);
+          });
+        }
+      }
+    });
+
     test("a decoy real code calls keeps the tarpit it reaches; only the unreached honeypot goes; output unchanged", () => {
       const py = Bun.which("python3")!;
       const src = bla.replace('\nif __name__ == "__main__":', `\nprint("decoy", ${tarpitNames[3]}(3, 0))\nif __name__ == "__main__":`);

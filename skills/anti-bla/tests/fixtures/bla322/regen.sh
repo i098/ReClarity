@@ -26,3 +26,4 @@ p mathlocal.bla.js "$here/src/mathlocal.js" --intensity stealth
 enc=$(mktemp -d)
 node -e 'import(process.argv[1]).then((m) => m.encryptStrings({ path: process.argv[2], seed: "fx-1", outDir: process.argv[3] }))' "$1/dist/index.js" "$here/src/vault.js" "$enc"
 mv "$enc/vault.js" "$here/vault.bla.js"; rmdir "$enc"
+p ledger.bankrupt.bla.py "$here/src/ledger.py" --intensity bankrupt

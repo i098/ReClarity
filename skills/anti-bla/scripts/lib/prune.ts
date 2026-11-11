@@ -232,6 +232,40 @@ function decorativeInit(st: AnyNode, code: string): boolean {
     const target = x.type === "AssignmentExpression" ? x.left : x.type === "UpdateExpression" ? x.argument : undefined;
     if (target?.type === "Identifier") writes.set(target.name, (writes.get(target.name) ?? 0) + 1);
   });
+  const bindings: [string, AnyNode][] = [];
+  const declared = new Set<string>();
+  const tainted = new Set<string>();
+  walk(fn, (x) => {
+    if (x.type === "VariableDeclarator" && x.id.type === "Identifier") {
+      declared.add(x.id.name);
+      if (x.init) bindings.push([x.id.name, x.init]);
+    } else if (x.type === "VariableDeclarator") {
+      const out: string[] = [];
+      patternNames(x.id, out);
+      out.forEach((n) => tainted.add(n));
+    } else if (x.type === "AssignmentExpression" && x.operator === "=" && x.left.type === "Identifier") bindings.push([x.left.name, x.right]);
+    else if (x.type === "FunctionExpression" || x.type === "ArrowFunctionExpression") {
+      const out: string[] = [];
+      x.params.forEach((p) => patternNames(p, out));
+      out.forEach((n) => tainted.add(n));
+    }
+  });
+  local.forEach((n) => declared.has(n) || tainted.add(n));
+  const leaves = (n: AnyNode): AnyNode[] => (n.type === "ConditionalExpression" ? [...leaves(n.consequent), ...leaves(n.alternate)] : n.type === "LogicalExpression" ? [...leaves(n.left), ...leaves(n.right)] : [n]);
+  const VALUES = ["Literal", "TemplateLiteral", "ArrayExpression", "ObjectExpression", "BinaryExpression", "UnaryExpression", "CallExpression", "FunctionExpression"];
+  const galias = new Set<string>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [name, init] of bindings) {
+      for (const l of leaves(init)) {
+        const isGlobal = l.type === "Identifier" && !local.has(l.name) && (l.name === "globalThis" || l.name === "window");
+        const taint = !VALUES.includes(l.type) && !isGlobal && !(l.type === "Identifier" && local.has(l.name) && !tainted.has(l.name));
+        const alias = isGlobal || (l.type === "Identifier" && galias.has(l.name));
+        if (taint && !tainted.has(name)) (tainted.add(name), (grew = true));
+        if (alias && !galias.has(name)) (galias.add(name), (grew = true));
+      }
+    }
+  }
   const rest = code.slice(0, st.start) + code.slice(st.end);
   const privateName = (a?: AnyNode) => a?.type === "Literal" && typeof a.value === "string" && !rest.includes(a.value);
   const counted = (x: AnyNode): boolean => {
@@ -255,7 +289,7 @@ function decorativeInit(st: AnyNode, code: string): boolean {
     if (m === "defineProperty") return onObject && privateName(b);
     if (m === "freeze") return onObject && (a?.type === "ObjectExpression" || a?.type === "ArrayExpression");
     const recv = c.object.type === "Identifier" ? c.object.name : "";
-    if (m === "addEventListener") return (local.has(recv) || recv === "window" || recv === "globalThis") && privateName(a);
+    if (m === "addEventListener") return ((galias.has(recv) && !tainted.has(recv)) || (!local.has(recv) && (recv === "window" || recv === "globalThis"))) && privateName(a);
     if (m === "getBuiltinModule") return recv === "process" && !local.has(recv) && a?.type === "Literal" && (a.value === "node:crypto" || a.value === "crypto");
     const ea = c.object;
     if ((m === "join" || m === "includes") && ea.type === "MemberExpression" && !ea.computed && ea.property.type === "Identifier" && ea.property.name === "execArgv" && ea.object.type === "Identifier" && ea.object.name === "process" && !local.has("process")) return true;
@@ -263,11 +297,12 @@ function decorativeInit(st: AnyNode, code: string): boolean {
     for (;;) {
       if (n.type === "MemberExpression") n = n.object;
       else if (n.type === "CallExpression") {
-        if (n.callee.type === "MemberExpression" && !n.callee.computed && n.callee.property.type === "Identifier" && n.callee.property.name === "getBuiltinModule") break;
+        const cc = n.callee;
+        if (cc.type === "MemberExpression" && !cc.computed && cc.property.type === "Identifier" && cc.property.name === "getBuiltinModule" && cc.object.type === "Identifier" && cc.object.name === "process" && !local.has("process")) break;
         n = n.callee;
       } else break;
     }
-    const rooted = n.type === "CallExpression" || n.type === "ArrayExpression" || n.type === "Literal" || (n.type === "Identifier" && (local.has(n.name) || (n.name === "Array" && m === "isArray")));
+    const rooted = n.type === "CallExpression" || n.type === "ArrayExpression" || n.type === "Literal" || (n.type === "Identifier" && ((local.has(n.name) && !tainted.has(n.name) && !galias.has(n.name)) || (n.name === "Array" && m === "isArray")));
     return rooted && COMPUTE_ONLY.has(m);
   };
   let ok = true;

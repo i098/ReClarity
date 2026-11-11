@@ -323,6 +323,15 @@ describe("fold-js keeps shadow-runtime look-alikes that the program can observe"
       "try { process.x.digest(); } catch (_) {}",
       'try { window.app.addEventListener("zz:uniq", 1); } catch (_) {}',
       'try { window.app.getBuiltinModule("crypto").createHash("sha256").digest(); } catch (_) {}',
+      "try { var a = window.app; a.update(); } catch (_) {}",
+      "try { const a = globalThis.store; a.join(); } catch (_) {}",
+      "try { const a = typeof window !== 'undefined' ? window : {}; a.update(); } catch (_) {}",
+      'try { var a = window.app; a.addEventListener("zz:uniq", 1); } catch (_) {}',
+      "try { const { app: a } = window; a.update(); } catch (_) {}",
+      "try { var a = window?.app; a.update(); } catch (_) {}",
+      "try { var a = (0, window.app); a.update(); } catch (_) {}",
+      "try { var b, a = b = window.app; a.update(); } catch (_) {}",
+      "try { var a = 1; a = window.app; a.update(); } catch (_) {}",
     ]) expect(foldJs(init(body)).stats.shadowRuntimeRemoved).toBe(0);
   });
 });

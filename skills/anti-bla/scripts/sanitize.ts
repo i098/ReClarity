@@ -210,7 +210,7 @@ function sanitizeData(kind: NonNullable<ReturnType<typeof dataKind>>, src: strin
     }
     case "zip": {
       if (size > MAX_APK_FILE) return plain("over 1 GiB: not cleaned");
-      let buf = readFileSync(src);
+      let buf: Buffer = readFileSync(src);
       const entries = readZip(buf);
       const hits = zipHits(entries);
       const kinds = [...new Set(hits.map((h) => h.id))];

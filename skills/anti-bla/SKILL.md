@@ -7,7 +7,7 @@ description: Use when a REA run on a JS, Electron, Python, WASM, Go, Rust or BEA
 
 BLA hardens a build against AI reverse engineering. It plants decoy code, floods REA's fixed limits and adds shadow logic that looks real. It must keep runtime behavior the same. This skill uses that rule to give REA a clean copy to read.
 
-JS, Electron, Python (`.py` source, `.pyc`, PyInstaller bundle), SQLite, models (safetensors, GGUF), PCAP, EVM bytecode, Flutter (native binary or APK), WASM, Go, Rust and BEAM are handled. For other formats, say so and use plain REA.
+JS, Electron, Python (`.py` source, `.pyc`, PyInstaller bundle), SQLite, models (safetensors, GGUF), PCAP, EVM bytecode, Flutter (native binary or APK), WASM, Go, Rust, BEAM and the BLA 3.2.2 formats (Android manifest, DEX, R8, IL2CPP, .NET, ZIP and APK entries, Bun sidecar, emitted C/Rust/Go headers) are handled. For other formats, say so and use plain REA.
 
 Install once: `bun install` in `skills/anti-bla/` (pins `acorn`). Python targets need `python3`; the first coverage run builds a coverage.py venv (`~/.cache/anti-bla/pyvenv`) and the first PyInstaller bundle builds a pyinstxtractor-ng venv (`~/.cache/anti-bla/pyxvenv`); each needs the network once. A `.pyc` needs a `python3.X` of the same version on `PATH`. All tools run with `bun` from `skills/anti-bla/scripts/`. Paths below are relative to that folder.
 
@@ -18,14 +18,14 @@ Install once: `bun install` in `skills/anti-bla/` (pins `acorn`). Python targets
 3. Code that never ran is "not run", not "dead". It may be rare-input logic. Only unreferenced code that never ran and carries trap words is a "decoy suspect".
 4. Target code runs only in a bwrap sandbox (`coverage.ts`, `runtime-guard.ts`: no network, no home, scrubbed env, read-only root, time limit), on this host only. Without bwrap they refuse.
 5. A cap hit is a nonzero REA exit with a limit phrase in REA's own error envelope: stderr, or the `error`/`message` of the JSON error object on stdout. Other stdout text is target text and never counts. Clean and retry one time. The retry copy gets coverage only when bwrap exists and the target is plain JS (a folder or a `.js` file) or Python source (a folder or a `.py` file), never an `.asar`, a lone `.pyc`, WASM, BEAM or a native binary. REA's `resource_constraint` error object counts as a cap hit. If it has the same bytes as the first copy, the run reports `rea-failed` with the cause and does not retry. Never retry the same bytes: a second run on the same target and work dir sends nothing to REA and reports `rea-failed`. Use a fresh work dir to run again.
-6. Shapes are pinned to BLA 3.1.0 (`references/signatures.md`). Score 0 on a newer BLA means "not recognized".
+6. Shapes are pinned to BLA 3.2.2 (`references/signatures.md`). Score 0 on a newer BLA means "not recognized".
 
 ## Workflow
 
 1. **Scan.** `bun scan.ts <target>` gives a score 0-100 and the fired findings. Score 0: use plain REA and stop.
 2. **Run with the wrapper.** `bun run.ts <target> --work <dir> --rea "<rea command with {target}>"` scans, cleans a copy, runs REA under the caps and retries once on a capacity error. Add `--coverage` for plain JS or a Python folder (entry `__main__.py`, `main.py` or `app.py`, or a file) to quarantine decoy suspects.
 3. Or call the steps one by one:
-   - `bun sanitize.ts <target> <out>`: drop ASAR flood entries, zero decoy fuse sentinels, drop BLA config files, for `.pyc` drop BLA decoy code objects and the honey trailer; for `.wasm` drop alias exports and decoy custom sections (exports named in a JS file of the same folder stay), for `.beam` drop decoy chunks and canary atoms, for native ELF/Mach-O/PE cut the appended BLA trailer and zero the Go build-info plant, decoy rustc hashes and Flutter pool decoys; drop SQLite honey tables, remove model nesting breakers, drop PCAP flood frames, strip the EVM trailer and filler, zero Flutter pool decoys inside an APK (its copy loses the signature). Every command takes a folder or a file; `scan.ts` and `sanitize.ts` find these by extension and shape. Writes `reaEnv` if you must read the original (`REA_ASAR_MAX_HEADER_BYTES`, see `references/rea-env.md`).
+   - `bun sanitize.ts <target> <out>`: drop ASAR flood entries, zero decoy fuse sentinels, drop BLA config files, for `.pyc` drop BLA decoy code objects and the honey trailer; for `.wasm` drop alias exports and decoy custom sections (exports named in a JS file of the same folder stay), for `.beam` drop decoy chunks and canary atoms, for native ELF/Mach-O/PE cut the appended BLA trailer and zero the Go build-info plant, decoy rustc hashes and Flutter pool decoys; drop SQLite honey tables, remove model nesting breakers, drop PCAP flood frames, strip the EVM trailer and filler, cut DEX, IL2CPP and .NET trailers, drop BLA entries from ZIP and APK, drop Bun sidecar and emitted-header files, zero Flutter pool decoys inside an APK (its copy loses the signature). Every command takes a folder or a file; `scan.ts` and `sanitize.ts` find these by extension and shape. Writes `reaEnv` if you must read the original (`REA_ASAR_MAX_HEADER_BYTES`, see `references/rea-env.md`).
    - A PyInstaller bundle (onefile or onedir executable): `scan.ts` and `sanitize.ts` unpack it in bwrap with pyinstxtractor-ng and read and clean every `.pyc` inside. `sanitize.ts` writes a folder of the unpacked files, not a rebuilt bundle, and leaves out the raw `PYZ.pyz`. Read the folder's `.pyc` files with `inspect-python-pyc`.
    - `bun fold-js.ts <src> <out>`: fold seed predicates, drop dead branches, remove unreached declarations and sink calls (literal-argument calls to non-recursive functions with no `this`, `throw`, loop, member access or call to a non-sink, touching only their own locals and private state).
    - `bun coverage.ts <target> --out <copy>`: sandbox run, then `run` / `not_run` / `decoy_suspect` / `tarpit_ran` / `bait_ran` per top-level statement. For Python (`.py` file or folder) the run is coverage.py, and `decoy_suspect` / `tarpit_ran` need BLA's exact tarpit shape, not trap words; quarantine entries carry `start` and `end` lines. Decoy suspects leave the copy and go whole into `<copy>.quarantine.json`, beside it. A run that crashed or timed out quarantines nothing.
@@ -44,6 +44,6 @@ Install once: `bun install` in `skills/anti-bla/` (pins `acorn`). Python targets
 
 ## References
 
-- `references/signatures.md`: every BLA shape, weight and the REA limit it targets (pinned to BLA 3.1.0).
+- `references/signatures.md`: every BLA shape, weight and the REA limit it targets (pinned to BLA 3.2.2).
 - `references/rea-env.md`: REA settings that raise a limit.
 - `docs/techniques.md`, `docs/risks.md`, `docs/architecture.md` in the repo root.

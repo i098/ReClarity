@@ -31,7 +31,7 @@ describe("BLA 3.2.2 samples, built with real `bla protect` (regen.sh)", () => {
     for (const f of ["src/app.js", "src/ledger.py", "src/k.ptx", "src/Info.plist", "src/fw.uf2", "src/Tiny.class"]) expect(scan(join(DIR, f)).score).toBe(0);
   });
 
-  test("rule 2: the agent directive stays in the cleaned copy as data, and the run output is fenced", () => {
+  test("rule 2: the --self-seal build folds clean (its directive sits in decoy code and goes with it), and the run output is fenced", () => {
     const work = join(tmp, "run");
     const target = join(tmp, "app.js"); // no package.json above tmp: Node reads it as CommonJS
     cpSync(join(DIR, "app.bla-all.js"), target);
@@ -40,6 +40,6 @@ describe("BLA 3.2.2 samples, built with real `bla protect` (regen.sh)", () => {
     expect(r.verdict).toBe("ok");
     const a = r.attempts[0];
     expect(a.output).toContain('<target-data source="rea-output"');
-    expect(scan(r.prepared).findings.map((f) => f.id)).toContain("agent_directive");
+    expect(scan(r.prepared).findings.map((f) => f.id)).not.toContain("opaque_predicate");
   });
 });

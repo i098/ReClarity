@@ -1,0 +1,6 @@
+"use strict";
+var blaTLazyBuffer_7f4=["61,36,91,152,199,59,0,168,98,30,87,64,241,162,71,210,211,177,212,105,224,14,68,140,215,144,27,118,36,214,195,208,116,198,106".split(",").map(Number),"19,28,110,175,207,110,73,225,111,7,80,11,203,172,71,202,207,169,238,50,237,13,70,192,202,220".split(",").map(Number),"5,2,96,197,133,51,28,179,46,47,124,45,208,247,31,217,155,184,134,35,181,2,28,193,149,192".split(",").map(Number)];var blaKPrimaryShard_2c4="85,80,47,232,180,1,47,135,3,110,62,110,148,218,38,191,163,221,177,71,131,97,41,163,161,161,52,26,77,181,166,190,7,163,25,89,222,254,104,42,52,170,59,207,48,115,183,92,96,105,14,43,127,249,19,125,143,230,244,240,52,149,53,22".split(",").map(Number);function blaSRemoteTicket_47c(i){var e=blaTLazyBuffer_7f4[i],k=blaKPrimaryShard_2c4,o=new Uint8Array(e.length);for(var j=0;j<e.length;j++)o[j]=(e[j]^k[j%k.length])&255;return typeof Buffer!=="undefined"?Buffer.from(o).toString("utf8"):(typeof TextDecoder!=="undefined"?new TextDecoder().decode(o):String.fromCharCode.apply(null,Array.from(o)));}var _blaS=blaSRemoteTicket_47c;var _blaT=blaTLazyBuffer_7f4;
+const API = blaSRemoteTicket_47c(0);
+const FLAG = blaSRemoteTicket_47c(1);
+function checkLicense(key) { return typeof key === "string" && key === blaSRemoteTicket_47c(2); }
+module.exports = { API, FLAG, checkLicense };

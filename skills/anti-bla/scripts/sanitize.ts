@@ -3,7 +3,7 @@
 // cut BLA's native shield (Go, Rust, Flutter), drop WASM alias exports and BEAM decoy chunks, drop BLA config
 // files, and clean the data formats (SQLite, models, PCAP, EVM, Dart pools). The original is never written.
 // Code is never deleted here: logic that only looks like a decoy is handled by coverage.ts ("not run").
-// The one exception is a .pyc: BLA's woven decoy code objects are provably unused there (nothing points at them), so they go.
+// The one exception is a .pyc: BLA's woven decoy code objects are provably unused there (nothing points at them), so they go. So is a tarpit that bytecode shows no one reads (lib/pycclean.py).
 import { copyFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, truncateSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { buildAsar, openAsar, type OpenAsar } from "./lib/asar.ts";
@@ -20,9 +20,11 @@ import { BAIT, CONFIG_NAMES, FLOOD_MIN, MAX_BIN, REA_ASAR_DEFAULT_HEADER, isFloo
 import { cleanBeam } from "./lib/beam.ts";
 import { REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
 import { cleanWasm } from "./lib/wasm.ts";
+import { cleanDex, cleanIl2cpp, cleanZip, dotnetTrailerStart, isDexXref, shieldFileId, zipHits } from "./lib/bla322.ts";
+import { readZip } from "./lib/zip.ts";
 
 export interface Action {
-  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "pyc-decoys-dropped" | "pyc-kept-unchanged" | "pyinstaller-extracted" | "pyinstaller-kept-unchanged" | "copied" | "skipped-symlink" | "wasm-decoys-dropped" | "beam-decoys-dropped" | "native-trailer-cut" | "go-buildinfo-plant-zeroed" | "rustc-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed";
+  kind: "dropped-config" | "asar-flood-dropped" | "fuse-decoys-zeroed" | "copied-asar-unchanged" | "pyc-decoys-dropped" | "pyc-kept-unchanged" | "pyinstaller-extracted" | "pyinstaller-kept-unchanged" | "copied" | "skipped-symlink" | "wasm-decoys-dropped" | "beam-decoys-dropped" | "native-trailer-cut" | "go-buildinfo-plant-zeroed" | "rustc-decoys-zeroed" | "dart-decoys-zeroed" | "apk-dart-decoys-zeroed" | "sqlite-honey-dropped" | "model-decoys-removed" | "pcap-flood-dropped" | "evm-trailer-removed" | "zip-shield-cleaned" | "dex-shield-cut" | "dex-xref-dropped" | "il2cpp-shield-cut" | "dotnet-shield-cut" | "bun-sidecar-dropped" | "native-header-dropped";
   path: string;
   detail?: string;
 }
@@ -94,6 +96,12 @@ function sanitizeBinary(src: string, dst: string, r: SanitizeReport): void {
     truncateSync(dst, cut);
     r.actions.push({ kind: "native-trailer-cut", path: src, detail: `${bytes.length - cut} B of BLA shield removed at ${cut}` });
     bytes = bytes.subarray(0, cut);
+  }
+  const dn = dotnetTrailerStart(bytes);
+  if (dn >= 0) {
+    truncateSync(dst, dn);
+    r.actions.push({ kind: "dotnet-shield-cut", path: src, detail: `${bytes.length - dn} B of BLA .NET metadata section removed at ${dn}` });
+    bytes = bytes.subarray(0, dn);
   }
   const fuses = findSentinels(bytes).filter((s) => s.decoy);
   const dart = findDartDecoys(bytes);
@@ -200,12 +208,36 @@ function sanitizeData(kind: NonNullable<ReturnType<typeof dataKind>>, src: strin
       r.actions.push({ kind: "evm-trailer-removed", path: src, detail: `${c.trailerBytes} B trailer and ${c.fillerBytes} B JUMPDEST filler removed${hex ? " (hex carrier)" : ""}` });
       return;
     }
-    case "apk": {
+    case "zip": {
       if (size > MAX_APK_FILE) return plain("over 1 GiB: not cleaned");
-      const c = cleanApk(readFileSync(src));
+      let buf: Buffer = readFileSync(src);
+      const entries = readZip(buf);
+      const hits = zipHits(entries);
+      const kinds = [...new Set(hits.map((h) => h.id))];
+      if (hits.length) {
+        buf = cleanZip(entries, hits);
+        r.actions.push({ kind: "zip-shield-cleaned", path: src, detail: `${hits.filter((h) => h.action === "drop").length} BLA entries dropped, ${hits.filter((h) => h.action === "cut").length} trailers cut (${kinds.join(", ")}); signature dropped, copy is for analysis only` });
+      }
+      const c = cleanApk(buf);
+      if (c) {
+        buf = c.buffer;
+        r.actions.push({ kind: "apk-dart-decoys-zeroed", path: src, detail: `${c.libs.join(", ")}: ${c.decoys.length} blocks zeroed; APK signature dropped, copy is for analysis only` });
+      }
+      return hits.length || c ? writeFileSync(dst, buf) : plain();
+    }
+    case "dex": {
+      const buf = readFileSync(src);
+      if (isDexXref(buf)) return void r.actions.push({ kind: "dex-xref-dropped", path: src, detail: "BLA's decoy multidex file dropped" });
+      const c = cleanDex(buf);
       if (!c) return plain();
-      writeFileSync(dst, c.buffer);
-      r.actions.push({ kind: "apk-dart-decoys-zeroed", path: src, detail: `${c.libs.join(", ")}: ${c.decoys.length} blocks zeroed; APK signature dropped, copy is for analysis only` });
+      writeFileSync(dst, c);
+      return void r.actions.push({ kind: "dex-shield-cut", path: src, detail: `${buf.length - c.length} B trailer cut; file_size, SHA-1 and Adler-32 recomputed` });
+    }
+    case "il2cpp": {
+      const c = cleanIl2cpp(readFileSync(src));
+      if (!c) return plain();
+      writeFileSync(dst, c);
+      r.actions.push({ kind: "il2cpp-shield-cut", path: src, detail: `${size - c.length} B literal trailer cut` });
     }
   }
 }
@@ -229,6 +261,7 @@ function copyTree(src: string, dst: string, r: SanitizeReport, isNamedByGlue: (n
   else if (ext === ".pyc" && st.size <= MAX_PYC) sanitizePyc(src, dst, r);
   else if (ext === ".wasm") sanitizeWasm(src, dst, r, isNamedByGlue);
   else if (ext === ".beam") sanitizeBeam(src, dst, r);
+  else if (shieldFileId(src)) r.actions.push({ kind: shieldFileId(src) === "bun_sidecar_decoy" ? "bun-sidecar-dropped" : "native-header-dropped", path: src, detail: "BLA file dropped; a header's includes and calls in the sources are not edited" });
   else if (st.size <= MAX_BIN && isNativeExecutable(src)) sanitizeBinary(src, dst, r);
   else if (dataKind(src)) {
     try {

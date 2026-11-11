@@ -1,5 +1,5 @@
 // Shared JS helpers: parse, walk, seed discovery and a tiny pure evaluator.
-// BLA 3.1.0 hides its traps behind "seed" constants. A predicate that gives the
+// BLA (3.1.0 to 3.2.2) hides its traps behind "seed" constants. A predicate that gives the
 // same answer for every value the seed can hold is opaque and safe to fold.
 import { parse, type AnyNode, type Expression, type Node, type Program } from "acorn";
 
@@ -65,6 +65,14 @@ function byteMasked(x: AnyNode): boolean {
   return false;
 }
 
+/** Low bit provably 0: an even literal, `x & EVEN`, or `^`/`|` of two such values. */
+function lowBitZero(x: AnyNode): boolean {
+  if (x.type === "Literal") return typeof x.value === "number" && Number.isInteger(x.value) && x.value % 2 === 0;
+  if (x.type !== "BinaryExpression" || x.left.type === "PrivateIdentifier") return false;
+  if (x.operator === "&") return lowBitZero(x.left) || lowBitZero(x.right);
+  return (x.operator === "^" || x.operator === "|") && lowBitZero(x.left) && lowBitZero(x.right);
+}
+
 export function patternNames(p: AnyNode | null | undefined, out: string[]): void {
   if (!p) return;
   if (p.type === "Identifier") out.push(p.name);
@@ -93,9 +101,10 @@ export function reboundNames(program: Program): Set<string> {
 }
 
 /**
- * Top-level `const` seed constants whose name is bound once in the file. Shapes seen in BLA 3.1.0:
- *   const S = 4098631152 | (digest(0) === K ? 1 : 0)    integrity-entangled
- *   const S = (cond ? process.pid & 0xff : 42) | 1      any odd value in 1..255
+ * Top-level `const` seed constants whose name is bound once in the file. Shapes seen in BLA 3.1.0 and 3.2.2:
+ *   const S = 4098631152 | (digest(0) === K ? 1 : 0)                          integrity-entangled
+ *   const S = 305027790 ^ seal >>> 0 & 0xfffffffe | (digest(0) === K ? 1 : 0)   same, with --self-seal: any value of that parity
+ *   const S = (cond ? process.pid & 0xff : 42) | 1                            any odd value in 1..255
  * Unknown shapes, `let`/`var`, and names bound more than once return no seed, so nothing is folded for them.
  */
 export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
@@ -111,6 +120,9 @@ export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
         const lo = left.value | 0;
         const hi = lo | 1;
         seeds.push({ name: d.id.name, samples: flag === "either" ? [lo, hi] : [flag === 1 ? hi : lo] });
+      } else if (right.type === "ConditionalExpression" && isNum(right.consequent, 1) && isNum(right.alternate, 0) && lowBitZero(left)) {
+        const evens = ODD_SAMPLES.map((v) => v ^ 1);
+        seeds.push({ name: d.id.name, samples: flag === "either" ? [...ODD_SAMPLES, ...evens] : flag === 1 ? ODD_SAMPLES : evens });
       } else if (isNum(right, 1) && byteMasked(left)) {
         seeds.push({ name: d.id.name, samples: ODD_SAMPLES });
       }

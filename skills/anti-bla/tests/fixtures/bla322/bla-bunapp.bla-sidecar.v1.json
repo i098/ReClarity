@@ -1,0 +1,12 @@
+{
+  "schema": "bla-sidecar-entangle/v1",
+  "kind": "bun-companion-note",
+  "digest": "4db631415eb12b6ea16903924da1fad9935b5333e74ad6fe3f978394ab590a03",
+  "seedTag": "fx-1",
+  "entryPath": "bla-bunapp",
+  "sidecarPaths": [
+    "bla-bunapp.bunfs-snapshot"
+  ],
+  "softFold": false,
+  "mode": "sidecars"
+}

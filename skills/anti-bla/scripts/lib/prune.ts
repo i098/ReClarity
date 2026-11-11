@@ -1,12 +1,15 @@
 // Reachability pruning for top-level declarations of one JS file.
 // Roots are every statement that is not a plain declaration. A declaration is removed only when no
 // root reaches it. Sink calls (a call whose only effect is mutating private state nobody else reads)
-// are removed first, so the state and the function become unreachable too.
+// and BLA's shadow runtime (decorative init blocks and shadow-heap churn calls, see `shadowCuts`)
+// are removed first, so the state and the functions become unreachable too.
+import { runInNewContext } from "node:vm";
 import { kids, parseJs, patternNames, reboundNames, walk, type AnyNode, type Program, type Seed } from "./js.ts";
 
 export interface PruneStats {
   declarationsRemoved: number;
   sinkCallsRemoved: number;
+  shadowRuntimeRemoved: number;
 }
 
 /** Identifier uses that read or write a binding; property names and labels are not uses. */
@@ -203,6 +206,207 @@ function findSinks(decls: Decl[], roots: AnyNode[], rebound: Set<string>): Set<s
   return fns;
 }
 
+/** Platform methods that only compute a value; `freeze` is checked separately. */
+const COMPUTE_ONLY = new Set(["isArray", "join", "includes", "createHash", "createHmac", "update", "digest"]);
+const PLATFORM = new Set(["globalThis", "window", "process", "Object", "Array", "Boolean", "undefined"]);
+
+/**
+ * BLA's decorative init block: `(function () { try { ... } catch (e) {} })();`. No throw leaves the
+ * empty catch-all. It writes only its own locals, calls only compute-only platform methods (method
+ * names are taken to mean the platform method: the only outside names it reads are platform globals),
+ * and its only outside effects are a global property and event listeners whose names appear nowhere
+ * else in the file. Its loops count up to a literal or to the length of its own array literal.
+ */
+function decorativeInit(st: AnyNode, code: string): boolean {
+  if (st.type !== "ExpressionStatement" || st.expression.type !== "CallExpression" || st.expression.arguments.length) return false;
+  const fn = st.expression.callee;
+  if (fn.type !== "FunctionExpression" || fn.params.length || fn.async || fn.generator) return false;
+  const t = fn.body.body[0];
+  if (fn.body.body.length !== 1 || t?.type !== "TryStatement" || t.finalizer || !t.handler || t.handler.body.body.length) return false;
+  const local = declaredIn(fn);
+  const writes = new Map<string, number>();
+  const arrays = new Set<string>();
+  walk(fn, (x) => {
+    if (x.type === "FunctionExpression" && x.id) local.add(x.id.name);
+    else if (x.type === "VariableDeclarator" && x.id.type === "Identifier" && x.init?.type === "ArrayExpression") arrays.add(x.id.name);
+    const target = x.type === "AssignmentExpression" ? x.left : x.type === "UpdateExpression" ? x.argument : undefined;
+    if (target?.type === "Identifier") writes.set(target.name, (writes.get(target.name) ?? 0) + 1);
+  });
+  const bindings: [string, AnyNode][] = [];
+  const declared = new Set<string>();
+  const tainted = new Set<string>();
+  walk(fn, (x) => {
+    if (x.type === "VariableDeclarator" && x.id.type === "Identifier") {
+      declared.add(x.id.name);
+      if (x.init) bindings.push([x.id.name, x.init]);
+    } else if (x.type === "VariableDeclarator") {
+      const out: string[] = [];
+      patternNames(x.id, out);
+      out.forEach((n) => tainted.add(n));
+    } else if (x.type === "AssignmentExpression" && x.operator === "=" && x.left.type === "Identifier") bindings.push([x.left.name, x.right]);
+    else if (x.type === "FunctionExpression" || x.type === "ArrowFunctionExpression") {
+      const out: string[] = [];
+      x.params.forEach((p) => patternNames(p, out));
+      out.forEach((n) => tainted.add(n));
+    }
+  });
+  local.forEach((n) => declared.has(n) || tainted.add(n));
+  const leaves = (n: AnyNode): AnyNode[] => (n.type === "ConditionalExpression" ? [...leaves(n.consequent), ...leaves(n.alternate)] : n.type === "LogicalExpression" ? [...leaves(n.left), ...leaves(n.right)] : [n]);
+  const clean = (n: AnyNode | null): boolean => {
+    if (!n) return true;
+    switch (n.type) {
+      case "Literal": case "TemplateLiteral": case "BinaryExpression": case "UnaryExpression": case "FunctionExpression": return true;
+      case "ArrayExpression": return n.elements.every(clean);
+      case "ObjectExpression": return n.properties.every((p) => p.type === "Property" && clean(p.value));
+      case "CallExpression": return n.callee.type === "MemberExpression" && !n.callee.computed && n.callee.property.type === "Identifier" && (n.callee.property.name === "freeze" || n.callee.property.name === "defineProperty") ? n.arguments.every(clean) : true;
+      case "ConditionalExpression": case "LogicalExpression": return leaves(n).every(clean);
+      case "Identifier": return local.has(n.name) && !tainted.has(n.name) && !galias.has(n.name);
+      default: return false;
+    }
+  };
+  const galias = new Set<string>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [name, init] of bindings) {
+      for (const l of leaves(init)) {
+        const isGlobal = l.type === "Identifier" && !local.has(l.name) && (l.name === "globalThis" || l.name === "window");
+        const taint = !isGlobal && !(l.type === "Identifier" && galias.has(l.name) && !tainted.has(l.name)) && !clean(l);
+        const alias = isGlobal || (l.type === "Identifier" && galias.has(l.name));
+        if (taint && !tainted.has(name)) (tainted.add(name), (grew = true));
+        if (alias && !galias.has(name)) (galias.add(name), (grew = true));
+      }
+    }
+  }
+  const isGlobalRef = (n: AnyNode | undefined) => n?.type === "Identifier" && ((galias.has(n.name) && !tainted.has(n.name)) || (!local.has(n.name) && (n.name === "window" || n.name === "globalThis")));
+  const rest = code.slice(0, st.start) + code.slice(st.end);
+  const privateName = (a?: AnyNode) => a?.type === "Literal" && typeof a.value === "string" && !rest.includes(a.value);
+  const counted = (x: AnyNode): boolean => {
+    if (x.type !== "ForStatement" || x.init?.type !== "VariableDeclaration" || x.init.declarations.length !== 1) return false;
+    const { id, init } = x.init.declarations[0]!;
+    if (id.type !== "Identifier" || init?.type !== "Literal" || typeof init.value !== "number" || writes.get(id.name) !== 1) return false;
+    const { test, update } = x;
+    if (update?.type !== "UpdateExpression" || update.operator !== "++" || update.argument.type !== "Identifier" || update.argument.name !== id.name) return false;
+    if (test?.type !== "BinaryExpression" || test.operator !== "<" || test.left.type !== "Identifier" || test.left.name !== id.name) return false;
+    const r = test.right;
+    if (r.type === "Literal") return typeof r.value === "number";
+    return r.type === "MemberExpression" && !r.computed && r.property.type === "Identifier" && r.property.name === "length" && r.object.type === "Identifier" && arrays.has(r.object.name) && !writes.has(r.object.name);
+  };
+  const allowedCall = (x: AnyNode & { type: "CallExpression" }): boolean => {
+    const c = x.callee;
+    const [a, b] = x.arguments;
+    if (c.type === "Identifier") return c.name === "Boolean";
+    if (c.type !== "MemberExpression" || c.computed || c.property.type !== "Identifier") return false;
+    const m = c.property.name;
+    const onObject = c.object.type === "Identifier" && c.object.name === "Object";
+    if (m === "defineProperty") return onObject && privateName(b) && isGlobalRef(a);
+    if (m === "freeze") return onObject && (a?.type === "ObjectExpression" || a?.type === "ArrayExpression");
+    const recv = c.object.type === "Identifier" ? c.object.name : "";
+    if (m === "addEventListener") return isGlobalRef(c.object) && privateName(a);
+    if (m === "getBuiltinModule") return recv === "process" && !local.has(recv) && a?.type === "Literal" && (a.value === "node:crypto" || a.value === "crypto");
+    const ea = c.object;
+    if ((m === "join" || m === "includes") && ea.type === "MemberExpression" && !ea.computed && ea.property.type === "Identifier" && ea.property.name === "execArgv" && ea.object.type === "Identifier" && ea.object.name === "process" && !local.has("process")) return true;
+    let n: AnyNode = c.object;
+    for (;;) {
+      if (n.type === "MemberExpression") n = n.object;
+      else if (n.type === "CallExpression") {
+        const cc = n.callee;
+        if (cc.type === "MemberExpression" && !cc.computed && cc.property.type === "Identifier" && cc.property.name === "getBuiltinModule" && cc.object.type === "Identifier" && cc.object.name === "process" && !local.has("process")) break;
+        n = n.callee;
+      } else break;
+    }
+    const rooted = n.type === "CallExpression" || (n.type === "ArrayExpression" && clean(n)) || n.type === "Literal" || (n.type === "Identifier" && ((local.has(n.name) && !tainted.has(n.name) && !galias.has(n.name)) || (n.name === "Array" && m === "isArray")));
+    return rooted && COMPUTE_ONLY.has(m);
+  };
+  let ok = true;
+  walk(fn, (x) => {
+    if (["ThisExpression", "NewExpression", "AwaitExpression", "YieldExpression", "ImportExpression", "MetaProperty", "TaggedTemplateExpression", "WhileStatement", "DoWhileStatement", "ForInStatement", "ForOfStatement"].includes(x.type)) ok = false;
+    else if (x.type === "ForStatement") ok &&= counted(x);
+    else if (x.type === "CallExpression") ok &&= allowedCall(x);
+    else if (x.type === "AssignmentExpression") ok &&= x.left.type === "Identifier" && local.has(x.left.name);
+    else if (x.type === "UpdateExpression") ok &&= x.argument.type === "Identifier" && local.has(x.argument.name);
+    else if (x.type === "UnaryExpression" && x.operator === "delete") ok = false;
+  });
+  return ok && uses(fn).every((u) => local.has(u) || PLATFORM.has(u));
+}
+
+/** A step function of a churn group: reads only its locals, the group and `Math`; calls only those. */
+function closedStep(fn: AnyNode, group: Set<string>): boolean {
+  if (fn.type !== "FunctionDeclaration" || fn.async || fn.generator) return false;
+  const local = declaredIn(fn);
+  let ok = true;
+  walk(fn, (x) => {
+    if (["ThisExpression", "NewExpression", "ThrowStatement", "AwaitExpression", "YieldExpression", "ImportExpression", "MetaProperty", "TemplateLiteral", "FunctionExpression", "ArrowFunctionExpression", "ClassExpression"].includes(x.type)) ok = false;
+    // no strings: a computed key can never be spelled `__proto__`
+    else if (x.type === "Literal" && typeof x.value !== "number" && typeof x.value !== "boolean") ok = false;
+    else if (x.type === "MemberExpression" && !x.computed && x.property.type === "Identifier" && ["__proto__", "constructor", "prototype"].includes(x.property.name)) ok = false;
+    else if (x.type === "UnaryExpression" && x.operator === "delete") ok = false;
+    else if (x.type === "CallExpression") {
+      const c = x.callee;
+      ok &&= (c.type === "Identifier" && group.has(c.name)) || (c.type === "MemberExpression" && c.object.type === "Identifier" && c.object.name === "Math");
+    }
+  });
+  return ok && uses(fn).every((u) => local.has(u) || group.has(u) || u === "Math");
+}
+
+const CHURN_ROUNDS = 1000;
+
+/**
+ * Statements of BLA's shadow runtime that ran but that no other code can observe:
+ * - decorative init blocks (`decorativeInit`);
+ * - calls into a shadow-heap churn group: private state `var H` (self-contained initializer) and
+ *   the functions that touch it, where nothing outside the group reads H and every outside use of
+ *   a group function is a call statement with number arguments (so its result is unused). The calls
+ *   are cut only if a sandbox run of the group (once before H is set, then CHURN_ROUNDS times) ends,
+ *   never throws, keeps H's shape and leaves the builtins and globals alone.
+ */
+function shadowCuts(code: string, seedNames: string[]): AnyNode[] {
+  const ast = parseJs(code);
+  const { decls, roots } = classify(ast, seedNames);
+  const out = roots.filter((st) => decorativeInit(st, code));
+  const rebound = reboundNames(ast);
+  const declared = declaredIn(ast);
+  if (declared.has("Math") || decls.some((d) => d.name === "Math")) return out;
+  const src = (n: AnyNode) => code.slice(n.start, n.end);
+  for (const h of decls.filter((d) => d.isState && !rebound.has(d.name) && d.node.type === "VariableDeclaration" && d.node.kind === "var")) {
+    const group = decls.filter((d) => d.isFn && d !== h && d.uses.includes(h.name));
+    const names = new Set([h.name, ...group.map((g) => g.name)]);
+    if (!group.length || group.some((g) => rebound.has(g.name) || !closedStep(g.node, names))) continue;
+    const outside = [...decls.filter((d) => !names.has(d.name)).map((d) => d.node), ...roots];
+    const inGroup = (n: AnyNode) => group.some((g) => n.start >= g.node.start && n.end <= g.node.end);
+    const sites = bodies(ast).flat().filter((st) => {
+      if (inGroup(st) || st.type !== "ExpressionStatement" || st.expression.type !== "CallExpression") return false;
+      const { callee, arguments: args } = st.expression;
+      return callee.type === "Identifier" && callee.name !== h.name && names.has(callee.name) && args.every((a) => a.type === "Literal" && typeof a.value === "number");
+    });
+    const used = outside.flatMap((o) => uses(o)).filter((u) => names.has(u)).length;
+    if (!sites.length || used !== sites.length) continue;
+    const init = (h.node as AnyNode & { type: "VariableDeclaration" }).declarations[0]!.init;
+    const calls = sites.map(src).join("\n");
+    const probe = `"use strict";
+var ${h.name};
+${group.map((g) => src(g.node)).join("\n")}
+const antiBlaP = () => [Object, Array, Function].map((c) => Object.getOwnPropertyNames(c.prototype).join()).join() + Object.keys(globalThis).join();
+const antiBlaS = () => JSON.stringify(${h.name}, (k, v) => (typeof v === "number" ? 0 : v));
+const antiBlaP0 = antiBlaP();
+${calls}
+${h.name} = ${init ? src(init) : "undefined"};
+const antiBlaS0 = antiBlaS();
+for (let antiBlaI = 0; antiBlaI < ${CHURN_ROUNDS}; antiBlaI++) {
+${calls}
+if (antiBlaS() !== antiBlaS0) throw 0;
+}
+if (antiBlaP() !== antiBlaP0) throw 0;`;
+    try {
+      // shortcut: a bounded run, not a proof that call CHURN_ROUNDS + 1 cannot throw; upgrade to a shape/range analysis if BLA's stepper starts to vary by input.
+      runInNewContext(probe, {}, { timeout: 2000 });
+      out.push(...sites);
+    } catch {
+      // ran too long, threw, grew or touched builtins: keep the calls
+    }
+  }
+  return out;
+}
+
 /** Declarations no root reaches, as source ranges. */
 function unreachedCuts(code: string, seedNames: string[]): [number, number][] {
   const { decls, roots } = classify(parseJs(code), seedNames);
@@ -225,11 +429,14 @@ const isModule = (ast: Program): boolean =>
   ast.body.some((st) => st.type.startsWith("Import") || st.type.startsWith("Export")) || uses(ast).some((u) => u === "require" || u === "module" || u === "exports");
 
 export function pruneJs(src: string, seeds: Seed[]): { code: string; stats: PruneStats } {
-  if (!isModule(parseJs(src))) return { code: src, stats: { declarationsRemoved: 0, sinkCallsRemoved: 0 } };
+  if (!isModule(parseJs(src))) return { code: src, stats: { declarationsRemoved: 0, sinkCallsRemoved: 0, shadowRuntimeRemoved: 0 } };
   const seedNames = seeds.map((s) => s.name);
   let cuts = unreachedCuts(src, seedNames);
   let code = applyCuts(src, cuts);
-  const stats: PruneStats = { declarationsRemoved: cuts.length, sinkCallsRemoved: 0 };
+  const stats: PruneStats = { declarationsRemoved: cuts.length, sinkCallsRemoved: 0, shadowRuntimeRemoved: 0 };
+  cuts = shadowCuts(code, seedNames).map((st) => [st.start, st.end]);
+  stats.shadowRuntimeRemoved = cuts.length;
+  code = applyCuts(code, cuts);
   const ast = parseJs(code);
   const { decls, roots } = classify(ast, seedNames);
   const sinks = findSinks(decls, roots, reboundNames(ast));

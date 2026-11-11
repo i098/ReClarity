@@ -321,6 +321,8 @@ describe("fold-js keeps shadow-runtime look-alikes that the program can observe"
       "try { window.app.update(); } catch (_) {}",
       "try { globalThis.x.join(); } catch (_) {}",
       "try { process.x.digest(); } catch (_) {}",
+      'try { window.app.addEventListener("zz:uniq", 1); } catch (_) {}',
+      'try { window.app.getBuiltinModule("crypto").createHash("sha256").digest(); } catch (_) {}',
     ]) expect(foldJs(init(body)).stats.shadowRuntimeRemoved).toBe(0);
   });
 });

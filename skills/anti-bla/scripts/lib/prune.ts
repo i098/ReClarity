@@ -254,8 +254,9 @@ function decorativeInit(st: AnyNode, code: string): boolean {
     const onObject = c.object.type === "Identifier" && c.object.name === "Object";
     if (m === "defineProperty") return onObject && privateName(b);
     if (m === "freeze") return onObject && (a?.type === "ObjectExpression" || a?.type === "ArrayExpression");
-    if (m === "addEventListener") return privateName(a);
-    if (m === "getBuiltinModule") return a?.type === "Literal" && (a.value === "node:crypto" || a.value === "crypto");
+    const recv = c.object.type === "Identifier" ? c.object.name : "";
+    if (m === "addEventListener") return (local.has(recv) || recv === "window" || recv === "globalThis") && privateName(a);
+    if (m === "getBuiltinModule") return recv === "process" && !local.has(recv) && a?.type === "Literal" && (a.value === "node:crypto" || a.value === "crypto");
     const ea = c.object;
     if ((m === "join" || m === "includes") && ea.type === "MemberExpression" && !ea.computed && ea.property.type === "Identifier" && ea.property.name === "execArgv" && ea.object.type === "Identifier" && ea.object.name === "process" && !local.has("process")) return true;
     let n: AnyNode = c.object;

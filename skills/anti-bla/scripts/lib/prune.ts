@@ -256,7 +256,18 @@ function decorativeInit(st: AnyNode, code: string): boolean {
     if (m === "freeze") return onObject && (a?.type === "ObjectExpression" || a?.type === "ArrayExpression");
     if (m === "addEventListener") return privateName(a);
     if (m === "getBuiltinModule") return a?.type === "Literal" && (a.value === "node:crypto" || a.value === "crypto");
-    return COMPUTE_ONLY.has(m);
+    const ea = c.object;
+    if ((m === "join" || m === "includes") && ea.type === "MemberExpression" && !ea.computed && ea.property.type === "Identifier" && ea.property.name === "execArgv" && ea.object.type === "Identifier" && ea.object.name === "process" && !local.has("process")) return true;
+    let n: AnyNode = c.object;
+    for (;;) {
+      if (n.type === "MemberExpression") n = n.object;
+      else if (n.type === "CallExpression") {
+        if (n.callee.type === "MemberExpression" && !n.callee.computed && n.callee.property.type === "Identifier" && n.callee.property.name === "getBuiltinModule") break;
+        n = n.callee;
+      } else break;
+    }
+    const rooted = n.type === "CallExpression" || n.type === "ArrayExpression" || n.type === "Literal" || (n.type === "Identifier" && (local.has(n.name) || (n.name === "Array" && m === "isArray")));
+    return rooted && COMPUTE_ONLY.has(m);
   };
   let ok = true;
   walk(fn, (x) => {

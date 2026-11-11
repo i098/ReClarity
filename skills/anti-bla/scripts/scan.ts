@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Score a build 0-100 for BLA trap shapes before the first REA call. Score 0 = plain REA.
-// Shapes are pinned to BLA 3.1.0 (references/signatures.md). Reads only; never runs target code.
+// Shapes are pinned to BLA_VERSION (references/signatures.md). Reads only; never runs target code.
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { openAsar } from "./lib/asar.ts";
@@ -19,11 +19,13 @@ import { findWasmDecoys, parseSections } from "./lib/wasm.ts";
 import { pycDecoyNames, tarpitDecoyCount } from "./lib/pytarpit.ts";
 import { DIRECTIVE } from "./lib/trap.ts";
 import { extractBundle, isPyInstaller } from "./lib/pybox.ts";
+import { cleanDex, cleanIl2cpp, dotnetTrailerStart, isDexXref, shieldFileId, zipHits } from "./lib/bla322.ts";
+import { readZip } from "./lib/zip.ts";
 
-export const BLA_VERSION = "3.1.0";
+export const BLA_VERSION = "3.2.2";
 export const REA_ASAR_DEFAULT_HEADER = 16 * 1024 * 1024;
 export const FLOOD_MIN = 100;
-/** BLA 3.1.0 flood entry: path of 200+ chars, body of 256 bytes or less. */
+/** BLA flood entry: path of 200+ chars, body of 256 bytes or less. */
 export const isFloodEntry = (f: { path: string; node: { size?: number } }): boolean => f.path.length >= 200 && (f.node.size ?? 0) <= 256;
 
 export interface Finding {
@@ -53,6 +55,7 @@ const RULES: Record<string, { weight: number; min: number }> = {
   string_doubling: { weight: 10, min: 1 },
   keepalive_array: { weight: 10, min: 1 },
   decoy_ipc: { weight: 10, min: 1 },
+  js_bla_name: { weight: 25, min: 1 },
   runtime_guard: { weight: 10, min: 1 },
   bait_text: { weight: 15, min: 1 },
   agent_directive: { weight: 15, min: 1 },
@@ -71,6 +74,15 @@ const RULES: Record<string, { weight: number; min: number }> = {
   go_buildinfo_flood: { weight: 40, min: 1 },
   python_tarpit: { weight: 40, min: 1 },
   pyc_decoy_code: { weight: 40, min: 3 },
+  archive_decoy: { weight: 40, min: 1 },
+  android_manifest_decoy: { weight: 40, min: 1 },
+  android_r8_decoy: { weight: 40, min: 1 },
+  android_dex_xref_decoy: { weight: 40, min: 1 },
+  dex_shield: { weight: 40, min: 1 },
+  il2cpp_shield: { weight: 40, min: 1 },
+  dotnet_shield: { weight: 40, min: 1 },
+  bun_sidecar_decoy: { weight: 40, min: 1 },
+  native_header_decoy: { weight: 40, min: 1 },
 };
 export const CONFIG_NAMES = [".blarc", ".blarc.json", "bla.config.json", ".bla-manifest.json"];
 export const BAIT = /ANALYSIS_VIEW_PROJECTION|business_logic_present=false|Evidence Ledger Note|ENCLAVE-ATTESTATION-GUARD|ABI-COMPAT-SHIM|HONEY-CRYPTO-MANIFEST|EVIDENCE-LEDGER-ANCHOR|TPM-PCR-QUOTE|NITRO-VSOCK-DISPATCH|SEALED-SESSION-TICKET|SEALED-FSM/g;
@@ -79,6 +91,8 @@ const SHIELD_MARKER = /\[BLA-[A-Z0-9]+(?:-[A-Z0-9]+)*[\]:]|BLASystemDiagnostic_\
 const TEXT_EXTS = [".ptx", ".plist", ".map", ".uf2", ".class"];
 const ENCLAVE = /enclave|attestation|tpm2_|nitroenclave|vsock|hardware-sealed/gi;
 const DECOY_IPC = /delegatedToEnclave\s*:\s*true|fallbackStub\s*:\s*true/g;
+/** Fixed BLA names in JS: the `bla_encrypt_strings` decrypt stub tail, and 3.2.2's rename of a customer-local `Math` binding (`_blaLocalMath`, then renamed again with that hint, e.g. `_blaLocalMathContext_315`). */
+const JS_BLA_NAME = /\bvar _blaS=[\w$]+;var _blaT=|\b_blaLocalMath\w*/g;
 const MAX_JS = 16 * 1024 * 1024;
 export const MAX_BIN = 512 * 1024 * 1024;
 const MAX_FILES = 2000;
@@ -148,6 +162,7 @@ function scanJs(src: string, label: string, acc: Acc): void {
   acc.add("agent_directive", label, src.match(DIRECTIVE)?.length ?? 0);
   acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
   acc.add("decoy_ipc", label, src.match(DECOY_IPC)?.length ?? 0);
+  acc.add("js_bla_name", label, src.match(JS_BLA_NAME)?.length ?? 0);
   acc.add("runtime_guard", label, countStrongMarkers(src));
   let ast: Program;
   try {
@@ -164,7 +179,8 @@ function scanJs(src: string, label: string, acc: Acc): void {
       case "IfStatement":
       case "ConditionalExpression":
       case "WhileStatement":
-        if (opaqueValue(n.test, seeds)) acc.add("opaque_predicate", label);
+        // BLA also guards with `flag && PREDICATE`: count the opaque operand
+        for (const t of n.test.type === "LogicalExpression" && !opaqueValue(n.test, seeds) ? [n.test.left, n.test.right] : [n.test]) if (opaqueValue(t, seeds)) acc.add("opaque_predicate", label);
         break;
       case "BinaryExpression": {
         if (n.operator !== "+") break;
@@ -289,10 +305,21 @@ function scanData(kind: NonNullable<ReturnType<typeof dataKind>>, path: string, 
       if (r) acc.add("evm_trailer", `${path}: ${r.trailerBytes} B trailer, ${r.fillerBytes} B filler${hex ? " (hex)" : ""}`);
       return;
     }
-    case "apk": {
+    case "zip": {
       if (size > MAX_APK_FILE) return void acc.notes.push(`${path}: over 1 GiB, not scanned`);
-      for (const f of findApkDecoys(readFileSync(path))) acc.add("dart_pool_decoy", `${path}!${f.lib}: ${f.decoys.length} Dart decoy blocks`, f.decoys.length);
+      const buf = readFileSync(path);
+      for (const f of findApkDecoys(buf)) acc.add("dart_pool_decoy", `${path}!${f.lib}: ${f.decoys.length} Dart decoy blocks`, f.decoys.length);
+      for (const h of zipHits(readZip(buf))) acc.add(h.id, `${path}!${h.name}`);
+      return;
     }
+    case "dex": {
+      const buf = readFileSync(path);
+      if (isDexXref(buf)) acc.add("android_dex_xref_decoy", path);
+      else if (cleanDex(buf)) acc.add("dex_shield", path);
+      return;
+    }
+    case "il2cpp":
+      if (cleanIl2cpp(readFileSync(path))) acc.add("il2cpp_shield", path);
   }
 }
 
@@ -322,6 +349,7 @@ function scanNative(bytes: Buffer, path: string, acc: Acc): void {
   if (dart.length) acc.add("dart_pool_decoy", `${path}: ${dart.length} Dart decoy blocks`, dart.length);
   const go = goBuildInfos(bytes).filter(isGoFlood);
   if (go.length) acc.add("go_buildinfo_flood", go[0]!.plantEnd >= 0 ? `${path}: BLA Go plant marker after build info at ${go[0]!.offset}` : `${path}: Go build info claims ${go[0]!.claimed} B (REA limit ${REA_MAX_GO_BUILDINFO})`, go.length);
+  if (dotnetTrailerStart(bytes) >= 0) acc.add("dotnet_shield", `${path}: BLA .NET metadata section at ${dotnetTrailerStart(bytes)}`);
 }
 
 function scanText(src: string, label: string, acc: Acc): void {
@@ -342,6 +370,8 @@ function scanFile(path: string, size: number, acc: Acc): void {
   } else if (TEXT_EXTS.includes(ext)) {
     if (size > MAX_JS) acc.notes.push(`${path}: over 16 MiB, skipped`);
     else scanText(readFileSync(path, "latin1"), path, acc);
+  } else if (shieldFileId(path)) {
+    acc.add(shieldFileId(path)!, path);
   } else if (size <= MAX_BIN && isNativeExecutable(path)) {
     // shortcut: reads the whole binary into memory; stream it if a target over 512 MiB ever matters
     const bin = readFileSync(path);

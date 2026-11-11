@@ -251,3 +251,73 @@ test("foldPath never follows or copies a symlink", () => {
   expect(readFileSync(join(tmp, "link-dir-out", "main.js"), "utf8")).toBe("module.exports = 1;\n");
   expect(rep.notes.filter((n) => n.includes("symlink skipped"))).toHaveLength(2);
 });
+
+describe("fold-js cuts BLA's shadow runtime and keeps the program's output", () => {
+  // .cjs: the skill's package.json says "type": "module", and these builds are CommonJS
+  const run = (name: string, code: string | Buffer) => {
+    const file = join(tmp, `${name.replaceAll("/", "-")}.cjs`);
+    writeFileSync(file, code);
+    const r = Bun.spawnSync(["node", file], { stdout: "pipe", stderr: "pipe" });
+    return [r.exitCode, r.stdout.toString(), r.stderr.toString()];
+  };
+  for (const [hard, plain] of [["main.bla.js", "main.js"], ["bla322/app.bla.js", "bla322/src/app.js"]] as const) {
+    test(`${hard}: init block and heap churn are gone, output equals the plain ${plain}`, () => {
+      const r = foldJs(readFixture(hard).toString("utf8"));
+      expect(r.stats.shadowRuntimeRemoved).toBeGreaterThan(0);
+      expect(r.code).not.toContain("addEventListener");
+      expect(r.code).not.toMatch(/shadowHeap|stepShadowHeap|_enclaveRuntime/i);
+      expect(run(`shadow-${hard}`, r.code)).toEqual(run(`plain-${plain}`, readFixture(plain)));
+      expect(r.code.length).toBeLessThan(3 * readFixture(plain).length);
+    });
+  }
+});
+
+describe("fold-js keeps shadow-runtime look-alikes that the program can observe", () => {
+  const seed = "const _s = 4098631152 | (typeof _d === \"function\" && _d(0) === 1282826635 ? 1 : 0);\nfunction _d() { return 0; }\n";
+  const churn = (step: string, tail = "module.exports = { f };") =>
+    `${seed}var H = { n: 0, w: [1, 2] };\nfunction step(d) { if (!H) return 0; ${step} }\nfunction f(x) { step(3); return x + 1; }\n${tail}\n`;
+
+  test("a churn call on private state is cut and the state goes with it", () => {
+    const r = foldJs(churn("H.n = (H.n + d) & 0x7fff; for (let i = 0; i < H.w.length; i++) { H.w[i] = H.w[i] ^ d; } return H.n;"));
+    expect(r.stats.shadowRuntimeRemoved).toBe(1);
+    expect(r.code).not.toContain("step");
+    expect(r.code).not.toContain("var H");
+    expect(load(r.code).f!(1)).toBe(2);
+  });
+
+  test("a churn call that throws late, hangs, grows the state or is read is kept", () => {
+    const late = churn("H.n = H.n + 1; if (H.n > 50) { H.w[5].x = 1; }");
+    expect(foldJs(late).stats.shadowRuntimeRemoved).toBe(0);
+    const f = load(foldJs(late).code).f!;
+    expect(() => { for (let i = 0; i < 60; i++) f(i); }).toThrow(TypeError);
+    expect(foldJs(churn("while (H.n >= 0) { H.n = H.n & 1; }")).stats.shadowRuntimeRemoved).toBe(0);
+    expect(foldJs(churn("H.w[H.w.length] = d;")).stats.shadowRuntimeRemoved).toBe(0);
+    const read = churn("H.n = H.n + d;", "module.exports = { f, n: () => H.n };");
+    expect(foldJs(read).stats.shadowRuntimeRemoved).toBe(0);
+    expect(load(foldJs(read).code).n!()).toBe(0);
+    expect(foldJs(churn("H.n = H.n + d;").replace("{ step(3);", "{ const v = step(3);")).stats.shadowRuntimeRemoved).toBe(0);
+  });
+
+  const init = (body: string, tail = "module.exports = { f: () => 1 };") => `${seed}(function () { ${body} })();\n${tail}\n`;
+  const define = 'const g = globalThis; Object.defineProperty(g, "_antiBlaDecoy", { configurable: true, get: function () { return 7; } });';
+
+  test("a decorative init block is cut", () => {
+    const r = foldJs(init(`try { ${define} for (let i = 0; i < 4; i++) {} } catch (_) {}`));
+    expect(r.stats.shadowRuntimeRemoved).toBe(1);
+    expect(r.code).not.toContain("_antiBlaDecoy");
+  });
+
+  test("an init block the program reads, or with any effect besides a private global, is kept", () => {
+    const read = init(`try { ${define} } catch (_) {}`, "module.exports = { f: () => globalThis._antiBlaDecoy };");
+    expect(foldJs(read).stats.shadowRuntimeRemoved).toBe(0);
+    expect(load(foldJs(read).code).f!()).toBe(7);
+    delete (globalThis as Record<string, unknown>)._antiBlaDecoy;
+    for (const body of [
+      define, // no catch-all around it
+      `try { ${define} process.stdout.write(""); } catch (_) {}`,
+      "try { globalThis.antiBlaFlag = 1; } catch (_) {}",
+      "try { for (let i = 0; i < 4; i += 0) {} } catch (_) {}",
+      "try { while (true) {} } catch (_) {}",
+    ]) expect(foldJs(init(body)).stats.shadowRuntimeRemoved).toBe(0);
+  });
+});

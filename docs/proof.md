@@ -24,8 +24,7 @@ BLA's ASAR header flood (4000 decoy entries, 17.4 MiB header) stops REA before a
 
 Arm C is not equal to arm A:
 
-- **Code that ran is kept.** BLA also appends "decorative shadow runtime" blocks that execute at load. `fold-js` leaves them in place: they are not sink calls (`fold-js` drops only sink calls; it removed 0 on this fixture), and code that ran is evidence. They stay in the copy, so C has 4.5 times the tokens of A and 712 unknowns.
-- **Measured upper bound.** Removing these blocks by hand from the cleaned copy gave 150165 tokens (A: 138126). This is not shipped: deleting code that ran could change behavior.
+- **Shadow runtime is cut when nothing can observe it.** `fold-js` removes BLA's decorative init block (catch-all `try`, writes only its locals, calls only compute-only platform methods, defines a global and listeners whose names appear nowhere else in the file) and its shadow-heap churn calls (private `var` state that only the step functions touch, called as statements with number arguments, checked by a sandbox run that must end, never throw, keep the state's shape and leave builtins alone). Re-run on 2026-11-11 with REA 6.8.0 on a tiny-notes ASAR pair without the header flood: arm C has 150203 tokens (A: 138099, 1.09 times) and 115 unknowns (A: 111), recall 1.00, 0 trap words. Before this change the same pair gave 2099693 tokens and 2216 unknowns. Limits: the churn check is a bounded run of 1000 rounds; a global name is checked only within its own file; the `--self-seal` digest stays because it reads files and can throw.
 - **Identifier renaming stays.** BLA renames functions. Function names are not recovered, so a name-based recall metric would be 0 in arms B and C.
 
 ## Data formats: hardened vs cleaned
@@ -162,8 +161,8 @@ REA did not fail on the hardened member: PyInstaller stores only the code object
 
 ### Not covered
 
-- A `.pyc` compiled from already hardened source keeps the tarpit as ordinary functions (they are referenced by bytecode). Only the source route removes them. A PyInstaller bundle built from such source has the same limit: clean the `.py` files before bundling.
-- One fixture, one seed, one BLA version. Python 3.7 and 3.8 `.pyc` layouts (BLA `py37`, `py38`) were not built here.
+- A `.pyc` compiled from hardened source (`ledger.py312.tarpit.pyc`: `ledger.bla.py` compiled by CPython 3.12) is cleaned in bytecode. `pycclean.py` replaces each tarpit statement with NOPs: the decoy defs, the state, the slot and the honeypot. It also removes the woven lines in real functions, but only when nothing outside the tarpit names them. The cleaned file runs the same as `ledger.py` on CPython 3.7 to 3.14 (`python.test.ts`). Limits: the cleaner reads one `.pyc` at a time, so it does not see a tarpit name that another module imports. It assumes that the removed tarpit code never raises, which is true for BLA's. When real code calls a decoy, the tarpit that call reaches stays. A global `_` that real code reads (for example gettext) keeps the honeypot's `_ = ...` line. A PyInstaller bundle uses the same cleaner; one built from hardened source was not built here.
+- Python 3.7 and 3.8 `.pyc` (BLA 3.2.2 `py37`, `py38` layouts): `ledger.py37.bla.pyc` and `ledger.py38.bla.pyc` are real `bla protect` output. Scan flags 28 decoy names in each. Cleaning removes 27 decoys and the 7521 B honey trailer, then the file runs the same. The 3.7 cleaner had a bug (`code.replace` is not in 3.7), now fixed. Still one fixture and one seed per layout.
 - Coverage covers one run of the entry. A branch the run did not take is "not run", and stays unless it matches the tarpit shape.
 
 ## BLA 3.2.2: technique coverage
@@ -219,12 +218,36 @@ Columns: **Scan** is a finding that anti-bla `scan.ts` gives on the sample (a sa
 | `rm`, `sed -i`, `mv`, `tee`, `>`, `>>` on a target blocked; `cp` and `install` into a target blocked | guard | pass |
 | `cat`, `grep`, `cp` out, and anti-bla's own tools allowed | guard | pass |
 | Installer: keeps the user's hooks, is idempotent, works from the installed copy, codex and gemini event names | install | pass |
-| Cleaned copy of a `--llm-directives` build still holds the directive as data, and `run.ts` fences the output | `bla322.test.ts` | pass |
+| A `--self-seal` + `--llm-directives` build folds clean (no `opaque_predicate` left), and `run.ts` fences the output | `bla322.test.ts` | pass |
+
+### Formats added after the first 3.2.2 pass
+
+These samples come from the same `regen.sh`. `mkin.mjs` builds their plain inputs. The ZIP and APK inputs come from BLA's own ZIP writer, because BLA 3.2.2 refuses a ZIP with timestamps, extra fields or a signature. Each clean copy is compared with the plain input in `bla322-formats.test.ts`. Run `bun test skills/anti-bla/tests/bla322-formats.test.ts` to repeat.
+
+| BLA format | Sample | Scan finding | Clean | Result |
+| --- | --- | --- | --- | --- |
+| DEX (`[BLA-DEX-SHIELD-V1]` trailer) | `bla-classes.dex` | `dex_shield` | trailer cut, `file_size`, SHA-1 and Adler-32 recomputed; equals the plain DEX | pass |
+| Unity IL2CPP metadata | `bla-global-metadata.dat` | `il2cpp_shield` | literal trailer cut; equals the plain file | pass |
+| .NET (`BLA_DOTNET_CLR_SHIELD_V1` section) | `bla-App.dll` | `dotnet_shield` | section cut; equals the plain DLL | pass |
+| ZIP archive | `bla-app.zip` | `archive_decoy` | `assets/enclave/` and `enclave/` entries dropped; entries equal the plain ZIP | pass |
+| Android manifest decoy | `bla-app.apk` | `android_manifest_decoy` | `assets/bla-shield/AndroidManifest*.xml` dropped; the real manifest stays | pass |
+| R8 mapping and JNI decoy | `bla-app.apk` | `android_r8_decoy` | `mapping.txt`, `proguard-mapping.txt` and `libbla_enclave_jni.so` dropped | pass |
+| DEX xref decoy (`BLA-DEX-XREF-V1`) | `bla-app.apk` | `android_dex_xref_decoy` | the extra `classesN.dex` dropped | pass |
+| APK, mobile game assets (DEX and IL2CPP members) | `bla-app.apk` | `dex_shield`, `archive_decoy` | trailers cut inside the APK; entries equal the plain APK | pass |
+| Bun standalone | `bla-bunapp.bunfs-snapshot`, `.bla-sidecar.v1.json` | `bun_sidecar_decoy` | both files dropped. BLA never changes the Bun binary beside them | pass |
+| Emitted C, Rust, Go headers | `bla_shield.h`, `.rs`, `.go` | `native_header_decoy` | file dropped | pass |
+
+Limits that stay:
+
+- A planted ZIP entry counts only when BLA's own manifest entry (`bla-attestation-manifest.json`, schema `bla-archive-enclave-shield/v1`) is in the archive. A folder with the same name and no manifest entry is kept.
+- The clean APK has no signature. It is for analysis, not for install.
+- A dropped header leaves the `#include` and the calls to its functions in the developer's sources. `sanitize.ts` does not edit sources.
+- A real Bun standalone binary was not built. The carrier is a minimal ELF header with a Bun module graph, which is what BLA detects. A real `bun build --compile` binary was not run here.
+- BLA 3.2.2 ZIP input limits (no timestamps, no extra fields, no signature) mean a real shipped APK cannot be protected by BLA 3.2.2 as it is. The APK sample is the unsigned shape BLA accepts.
 
 ### Not covered
 
-- BLA formats with no sample here: Android manifest, DEX and R8, .NET, Bun standalone, mobile game assets, archive (BLA 3.2.2 refused my ZIP: "unsupported versions, timestamps, extra fields"), emitted C/Rust/Go headers. `scan.ts` does not know them. Score 0 there means "not recognized", as for any newer BLA.
-- The shapes in `references/signatures.md` are still the 3.1.0 code shapes. 3.2.2 samples scored `hardened` through them, so no code shape changed that these samples show. Text markers are the part that moved.
-- `sanitize.ts` does not remove directive text. It stays in the cleaned copy as data. The fence and `asData` are the answer, not deletion: BLA may change its wording, and the text may sit in code that runs.
+- The shapes in `references/signatures.md` are pinned to BLA 3.2.2 (commit `38d26d5`). The predicate and seed templates are the same as in 3.1.0. Before this change, `scan.ts` missed most of the opaque predicates: the `--self-seal` seed (in 3.1.0 too) and the tarpit's `flag && P` tests. On 48 real 3.2.2 builds (3 seeds, 4 intensities, with and without all flags), it now counts every emitted predicate (`tests/shapes322.test.ts`). 3.2.2 adds two fixed JS names, `_blaLocalMath*` and the `bla_encrypt_strings` stub's `var _blaS=`, reported as `js_bla_name`.
+- `sanitize.ts` does not remove directive text. `fold-js.ts` drops it only when it sits in decoy code that the fold prunes, as in `app.bla-llm.js` and `app.bla-all.js`. Directive text that stays is data: the fence and `asData` are the answer, not deletion. BLA may change its wording, and the text may sit in code that runs.
 - The hooks were run as scripts with the JSON the three harness docs describe. They were not run inside a live Claude Code, Codex or Gemini session. No agent (Claude/Codex) was run on this evidence.
 - `guard.ts` reads command text only. A path built at run time passes.

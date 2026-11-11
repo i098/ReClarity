@@ -14,6 +14,8 @@ export interface FoldStats {
   branchesDropped: number;
   declarationsRemoved: number;
   sinkCallsRemoved: number;
+  /** BLA shadow-runtime statements cut: decorative init blocks and shadow-heap churn calls. */
+  shadowRuntimeRemoved: number;
   sourceMapStripped: boolean;
 }
 export interface FoldResult {
@@ -60,7 +62,7 @@ function foldPass(src: string, seeds: Seed[], stats: FoldStats): string {
 }
 
 export function foldJs(src: string, seedFlag: SeedFlag = 1): FoldResult {
-  const stats: FoldStats = { predicatesFolded: 0, branchesDropped: 0, declarationsRemoved: 0, sinkCallsRemoved: 0, sourceMapStripped: false };
+  const stats: FoldStats = { predicatesFolded: 0, branchesDropped: 0, declarationsRemoved: 0, sinkCallsRemoved: 0, shadowRuntimeRemoved: 0, sourceMapStripped: false };
   const seeds = findSeeds(parseJs(src), seedFlag);
   if (!seeds.length) return { code: src, stats };
   let code = foldPass(src, seeds, stats);
@@ -68,6 +70,7 @@ export function foldJs(src: string, seedFlag: SeedFlag = 1): FoldResult {
   code = pruned.code;
   stats.declarationsRemoved = pruned.stats.declarationsRemoved;
   stats.sinkCallsRemoved = pruned.stats.sinkCallsRemoved;
+  stats.shadowRuntimeRemoved = pruned.stats.shadowRuntimeRemoved;
   // the embedded map carries the original bait text and no longer matches the folded code
   const map = code.replace(/\n\/\/# sourceMappingURL=data:[^\n]*\s*$/, "\n");
   stats.sourceMapStripped = map !== code;
@@ -77,7 +80,7 @@ export function foldJs(src: string, seedFlag: SeedFlag = 1): FoldResult {
 }
 
 const isJs = (p: string) => [".js", ".cjs", ".mjs"].includes(extname(p));
-const changed = (s: FoldStats): boolean => s.predicatesFolded + s.branchesDropped + s.declarationsRemoved + s.sinkCallsRemoved > 0 || s.sourceMapStripped;
+const changed = (s: FoldStats): boolean => s.predicatesFolded + s.branchesDropped + s.declarationsRemoved + s.sinkCallsRemoved + s.shadowRuntimeRemoved > 0 || s.sourceMapStripped;
 
 export interface FoldReport {
   tool: "anti-bla/fold-js";

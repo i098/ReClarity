@@ -1,5 +1,7 @@
 // Fixtures: tests/fixtures/ledger.bla.py and ledger.py<ver>.bla.pyc are real `bla protect --intensity bankrupt
-// --seed fixture-1 --weave-decoys` output (BLA 3.1.0) for ledger.py. The plain .pyc files are ledger.py compiled.
+// --seed fixture-1 --weave-decoys` output for ledger.py: BLA 3.1.0 for 3.9, 3.12, 3.14, BLA 3.2.2 (38d26d5) for 3.7 and 3.8.
+// The plain .pyc files are ledger.py compiled (`py_compile`, dfile "ledger.py"). ledger.py312.tarpit.pyc is ledger.bla.py
+// compiled the same way by CPython 3.12: BLA's source tarpit as ordinary bytecode.
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,6 +19,8 @@ const tmp = mkdtempSync(join(tmpdir(), "antibla-py-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 const LEDGER_OUT = "total 26\ndiscount 90.0\nlicense True\n";
+/** BLA's `py37` layout (3.7), `py38` (3.8-3.10) and `py311` (3.11+). */
+const PYC_VERSIONS = ["37", "38", "39", "312", "314"];
 /** Blank lines dropped: BLA leaves its own spacing behind, which cleaning does not restore. */
 const squash = (s: string): string => s.split("\n").filter((l) => l.trim()).join("\n");
 const pyDir = (name: string, files: Record<string, string | Buffer>): string => {
@@ -42,7 +46,7 @@ describe("scan: Python shapes", () => {
   });
 
   test("real BLA .pyc decoy code objects and honey trailer are flagged; the plain .pyc scores 0", () => {
-    for (const v of ["39", "312", "314"]) {
+    for (const v of PYC_VERSIONS) {
       const hard = scan(join(FIXTURES, `ledger.py${v}.bla.pyc`));
       expect(hard.findings.map((f) => f.id)).toEqual(expect.arrayContaining(["pyc_decoy_code", "bait_text"]));
       expect(scan(join(FIXTURES, `ledger.py${v}.pyc`)).score).toBe(0);
@@ -151,13 +155,13 @@ sys.exit(leaked)
 });
 
 describe.skipIf(!sandboxWorks)(".pyc decoys", () => {
-  const versions = ["39", "312", "314"].filter((v) => pythonForMagic(pycMagic(readFixture(`ledger.py${v}.pyc`))!));
+  const versions = PYC_VERSIONS.filter((v) => pythonForMagic(pycMagic(readFixture(`ledger.py${v}.pyc`))!));
 
   test("an interpreter is found for at least one fixture version", () => {
     expect(versions.length).toBeGreaterThan(0);
   });
 
-  for (const v of ["39", "312", "314"]) {
+  for (const v of PYC_VERSIONS) {
     test.skipIf(!versions.includes(v))(`py${v}: real BLA .pyc loses decoy code and honey trailer, keeps real code, runs the same`, () => {
       const src = join(FIXTURES, `ledger.py${v}.bla.pyc`);
       const py = pythonForMagic(pycMagic(readFixture(`ledger.py${v}.bla.pyc`))!)!;
@@ -203,6 +207,81 @@ describe.skipIf(!sandboxWorks)(".pyc decoys", () => {
     if (r.kind !== "cleaned") throw new Error(r.why);
     expect([...r.removed].sort()).toEqual(PYC_STEMS.map((s) => `${s}_1234`).sort());
     expect(runPy(py, join(tmp, "stems.out.pyc"))).toBe("ran\n");
+  });
+
+  describe("tarpit compiled from BLA source", () => {
+    const bla = readFileSync(join(FIXTURES, "ledger.bla.py"), "utf8");
+    const tarpitNames = [...bla.matchAll(/^(?:def (\w+_[0-9a-f]{4})\(|(\w+_[0-9A-F]{4})(?::| =))/gm)].map((m) => m[1] ?? m[2]!).filter((n) => n !== "hydrate_session_cache_1234"); // real code in ledger.py
+    const honey = ["probe_canary_honeypot", "CANARY_TOKENS", "AMBIGUOUS_TRANSPORT", "CONFLICTING_QUERY", "SYSTEM_DIAGNOSTICS", "ALIGNMENT_EVAL_CANARY_GUID", "COGNITIVE_ARMOR_CORPUS"];
+    const py312 = pythonForMagic(pycMagic(readFixture("ledger.py312.tarpit.pyc"))!);
+    const compile = (py: string, src: string, name: string): string => {
+      const f = join(tmp, `${name}.py`);
+      writeFileSync(f, src);
+      const out = join(tmp, `${name}.pyc`);
+      expect(Bun.spawnSync([py, "-I", "-c", `import py_compile;py_compile.compile(${JSON.stringify(f)}, cfile=${JSON.stringify(out)}, dfile="ledger.py", doraise=True)`]).exitCode).toBe(0);
+      return out;
+    };
+    const expectNoTarpit = (pyc: string): void => {
+      const text = readFileSync(pyc).toString("latin1");
+      for (const n of [...tarpitNames, ...honey]) expect(text).not.toContain(n);
+      expect(text).not.toMatch(/enclave|attestation|canary/i);
+      for (const name of ["total", "apply_discount", "check_license", "rare_export", "main", "hydrate_session_cache_1234"]) expect(text).toContain(name);
+    };
+
+    test("the fixture holds BLA's whole tarpit shape", () => {
+      expect(tarpitNames.length).toBe(22); // 18 decoys, the warm-up def, state, slot, manifest
+    });
+
+    test.skipIf(!py312)("py312 fixture: tarpit defs, state, slot, honeypot and woven lines go; output equals plain ledger.py", () => {
+      const out = join(tmp, "tarpit-312.pyc");
+      const r = cleanPyc(join(FIXTURES, "ledger.py312.tarpit.pyc"), out);
+      if (r.kind !== "cleaned") throw new Error(r.why);
+      expect([...r.removed].sort()).toEqual([...tarpitNames, ...honey].sort());
+      expectNoTarpit(out);
+      expect(runPy(py312!, out)).toBe(LEDGER_OUT);
+      expect(runPy(py312!, join(FIXTURES, "ledger.py312.pyc"))).toBe(LEDGER_OUT);
+      expect(scan(out).score).toBe(0);
+    });
+
+    for (const v of ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]) {
+      const py = Bun.which(`python${v}`);
+      test.skipIf(!py)(`python${v}: ledger.bla.py compiled here cleans to the plain program`, () => {
+        const out = join(tmp, `tarpit-${v}.out.pyc`);
+        const r = cleanPyc(compile(py!, bla, `tarpit-${v}`), out);
+        if (r.kind !== "cleaned") throw new Error(r.why);
+        expect(r.removed.length).toBe(tarpitNames.length + honey.length);
+        expectNoTarpit(out);
+        expect(runPy(py!, out)).toBe(LEDGER_OUT);
+      });
+    }
+
+    test("a decoy real code calls keeps the tarpit it reaches; only the unreached honeypot goes; output unchanged", () => {
+      const py = Bun.which("python3")!;
+      const src = bla.replace('\nif __name__ == "__main__":', `\nprint("decoy", ${tarpitNames[3]}(3, 0))\nif __name__ == "__main__":`);
+      const hard = compile(py, src, "tarpit-called");
+      const out = join(tmp, "tarpit-called.out.pyc");
+      const r = cleanPyc(hard, out);
+      if (r.kind !== "cleaned") throw new Error(r.why);
+      expect([...r.removed].sort()).toEqual([...honey].sort());
+      expect(runPy(py, out)).toBe(runPy(py, hard));
+    });
+
+    test("a shadowed builtin or a star import keeps everything", () => {
+      const py = Bun.which("python3")!;
+      for (const [name, line] of [["shadow", "hash = lambda x: 7"], ["star", "from os.path import *"]]) {
+        const r = cleanPyc(compile(py, bla.replace("\nimport sys\n", `\nimport sys\n${line}\n`), `tarpit-${name}`), join(tmp, `tarpit-${name}.out.pyc`));
+        if (r.kind !== "cleaned") throw new Error(r.why);
+        expect(r.removed).toEqual([]);
+      }
+    });
+
+    test.skipIf(!py312)("sanitize: a folder with the compiled tarpit comes back clean", () => {
+      const dir = pyDir("tarpit-dir", { "ledger.pyc": readFixture("ledger.py312.tarpit.pyc") });
+      const rep = sanitize(dir, join(tmp, "tarpit-dir-out"));
+      expect(rep.actions.map((a) => a.kind)).toEqual(["pyc-decoys-dropped"]);
+      expect(scan(join(tmp, "tarpit-dir-out")).score).toBe(0);
+      expect(runPy(py312!, join(tmp, "tarpit-dir-out", "ledger.pyc"))).toBe(LEDGER_OUT);
+    });
   });
 
   test("sanitize cleans BLA .pyc files in a folder, copies the plain one byte for byte, leaves the original alone", () => {

@@ -4,6 +4,8 @@
 
 BLA plants decoy code, floods REA's fixed limits and adds clean-looking shadow logic. BLA must keep program behavior the same. ReClarity uses that rule.
 
+![BLA-hardened build vs ReClarity-cleaned copy: status, time and tokens](docs/bla-vs-reclarity.svg)
+
 ## What it does
 
 - **Scan** a build for BLA trap shapes before the first REA call. Score 0 means plain REA.

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" role="img" aria-labelledby="t d"><title id="t">BLA-hardened build vs ReClarity-cleaned copy</title><desc id="d">REA 6.8.0 on a BLA 3.1.0 hardened sample: BLA stops REA with a capacity error; ReClarity restores the analysis at higher time and token use. Cost was not measured.</desc>
+<style>text{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;fill:#1f2933}.m{fill:#616e7c;font-size:13px}.h{font-size:15px;font-weight:600}.b{transform-box:fill-box;transform-origin:left;animation:g 1.4s cubic-bezier(.2,.7,.2,1) both}@keyframes g{from{transform:scaleX(0)}to{transform:scaleX(1)}}.f{animation:f .6s ease both}@keyframes f{from{opacity:0}to{opacity:1}}@media (prefers-reduced-motion:reduce){.b,.f{animation:none}}</style>
+<rect width="900" height="560" rx="14" fill="#fbfaf7" stroke="#e4e1da"/>
+<text x="40" y="52" font-size="22" font-weight="700">BLA vs ReClarity</text>
+<text x="40" y="76" class="m">Same REA command, same sample (REA 6.8.0, BLA 3.1.0 bankrupt, 3 runs). Source: docs/proof.md.</text>
+<text x="40" y="110" class="h">Analysis status</text>
+<g class="f" style="animation-delay:0.2s"><circle cx="48" cy="127" r="6" fill="#d9822b"/><text x="64" y="132" font-size="14"><tspan font-weight="600">BLA-hardened</tspan>  Capacity error: ASAR header over 16 MiB. REA stops, recall 0 of 3 facts.</text></g>
+<g class="f" style="animation-delay:0.5s"><circle cx="48" cy="157" r="6" fill="#0f9d8a"/><text x="64" y="162" font-size="14"><tspan font-weight="600">ReClarity-cleaned</tspan>  ok. REA runs again, recall 3 of 3 facts.</text></g>
+<text x="40" y="210" class="h">Analysis time</text><text x="167" y="210" class="m">seconds, 3 runs</text>
+<text x="40" y="240" font-size="13">Plain app</text><rect class="b" x="170" y="226" width="358" height="20" rx="4" fill="#9aa5b1" style="animation-delay:0.20s"/><text class="m f" x="536" y="241" style="animation-delay:1.20s">5.35–5.50 s</text>
+<text x="40" y="270" font-size="13">BLA-hardened</text><rect class="b" x="170" y="256" width="136" height="20" rx="4" fill="#d9822b" style="animation-delay:0.35s"/><text class="m f" x="314" y="271" style="animation-delay:1.35s">1.90–2.07 s, stopped early</text>
+<text x="40" y="300" font-size="13">ReClarity-cleaned</text><rect class="b" x="170" y="286" width="510" height="20" rx="4" fill="#0f9d8a" style="animation-delay:0.50s"/><text class="m f" x="688" y="301" style="animation-delay:1.50s">6.2–7.4 s + 0.45 s clean</text>
+<text x="40" y="340" class="h">Evidence tokens</text><text x="185" y="340" class="m">REA --token-count</text>
+<text x="40" y="370" font-size="13">Plain app</text><rect class="b" x="170" y="356" width="116" height="20" rx="4" fill="#9aa5b1" style="animation-delay:0.65s"/><text class="m f" x="294" y="371" style="animation-delay:1.65s">138,126</text>
+<text x="40" y="400" font-size="13">BLA-hardened</text><rect class="b" x="170" y="386" width="3" height="20" rx="4" fill="#d9822b" style="animation-delay:0.80s"/><text class="m f" x="181" y="401" style="animation-delay:1.80s">783 (the error text)</text>
+<text x="40" y="430" font-size="13">ReClarity-cleaned</text><rect class="b" x="170" y="416" width="520" height="20" rx="4" fill="#0f9d8a" style="animation-delay:0.95s"/><text class="m f" x="698" y="431" style="animation-delay:1.95s">618,233</text>
+<text x="40" y="470" class="h">Cost</text><text x="170" y="470" class="m">Not measured. No agent ran on this evidence (docs/proof.md, "Not run").</text>
+<text x="40" y="518" class="m">ReClarity spends more time and tokens than the plain app: BLA's shadow runtime stays because it ran.</text><text x="40" y="538" class="m">It fixes the capacity error, not the noise.</text>
+</svg>

@@ -6,6 +6,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and u
 
 ### Added
 
+- `untrusted-repo-read` skill: `isolate.ts` writes a view copy where planted instructions in comment and doc spans become markers, plus `isolation.json`.
 - Open-source files: `LICENSE` (MIT), `setup.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue forms, PR template, `CODEOWNERS` and `dependabot.yml`.
 
 ## [0.1.0] - 2026-11-08

@@ -332,6 +332,11 @@ describe("fold-js keeps shadow-runtime look-alikes that the program can observe"
       "try { var a = (0, window.app); a.update(); } catch (_) {}",
       "try { var b, a = b = window.app; a.update(); } catch (_) {}",
       "try { var a = 1; a = window.app; a.update(); } catch (_) {}",
+      "try { var o = { x: window.app }; o.x.update(); } catch (_) {}",
+      "try { var a = [window.app]; a[0].update(); } catch (_) {}",
+      "try { var a = [window.app]; a.join(); } catch (_) {}",
+      "try { var o = Object.freeze({ x: window.app }); o.x.update(); } catch (_) {}",
+      "try { [window.app][0].update(); } catch (_) {}",
     ]) expect(foldJs(init(body)).stats.shadowRuntimeRemoved).toBe(0);
   });
 });

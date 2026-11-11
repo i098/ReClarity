@@ -252,20 +252,32 @@ function decorativeInit(st: AnyNode, code: string): boolean {
   });
   local.forEach((n) => declared.has(n) || tainted.add(n));
   const leaves = (n: AnyNode): AnyNode[] => (n.type === "ConditionalExpression" ? [...leaves(n.consequent), ...leaves(n.alternate)] : n.type === "LogicalExpression" ? [...leaves(n.left), ...leaves(n.right)] : [n]);
-  const VALUES = ["Literal", "TemplateLiteral", "ArrayExpression", "ObjectExpression", "BinaryExpression", "UnaryExpression", "CallExpression", "FunctionExpression"];
+  const clean = (n: AnyNode | null): boolean => {
+    if (!n) return true;
+    switch (n.type) {
+      case "Literal": case "TemplateLiteral": case "BinaryExpression": case "UnaryExpression": case "FunctionExpression": return true;
+      case "ArrayExpression": return n.elements.every(clean);
+      case "ObjectExpression": return n.properties.every((p) => p.type === "Property" && clean(p.value));
+      case "CallExpression": return n.callee.type === "MemberExpression" && !n.callee.computed && n.callee.property.type === "Identifier" && (n.callee.property.name === "freeze" || n.callee.property.name === "defineProperty") ? n.arguments.every(clean) : true;
+      case "ConditionalExpression": case "LogicalExpression": return leaves(n).every(clean);
+      case "Identifier": return local.has(n.name) && !tainted.has(n.name) && !galias.has(n.name);
+      default: return false;
+    }
+  };
   const galias = new Set<string>();
   for (let grew = true; grew; ) {
     grew = false;
     for (const [name, init] of bindings) {
       for (const l of leaves(init)) {
         const isGlobal = l.type === "Identifier" && !local.has(l.name) && (l.name === "globalThis" || l.name === "window");
-        const taint = !VALUES.includes(l.type) && !isGlobal && !(l.type === "Identifier" && local.has(l.name) && !tainted.has(l.name));
+        const taint = !isGlobal && !(l.type === "Identifier" && galias.has(l.name) && !tainted.has(l.name)) && !clean(l);
         const alias = isGlobal || (l.type === "Identifier" && galias.has(l.name));
         if (taint && !tainted.has(name)) (tainted.add(name), (grew = true));
         if (alias && !galias.has(name)) (galias.add(name), (grew = true));
       }
     }
   }
+  const isGlobalRef = (n: AnyNode | undefined) => n?.type === "Identifier" && ((galias.has(n.name) && !tainted.has(n.name)) || (!local.has(n.name) && (n.name === "window" || n.name === "globalThis")));
   const rest = code.slice(0, st.start) + code.slice(st.end);
   const privateName = (a?: AnyNode) => a?.type === "Literal" && typeof a.value === "string" && !rest.includes(a.value);
   const counted = (x: AnyNode): boolean => {
@@ -286,10 +298,10 @@ function decorativeInit(st: AnyNode, code: string): boolean {
     if (c.type !== "MemberExpression" || c.computed || c.property.type !== "Identifier") return false;
     const m = c.property.name;
     const onObject = c.object.type === "Identifier" && c.object.name === "Object";
-    if (m === "defineProperty") return onObject && privateName(b);
+    if (m === "defineProperty") return onObject && privateName(b) && isGlobalRef(a);
     if (m === "freeze") return onObject && (a?.type === "ObjectExpression" || a?.type === "ArrayExpression");
     const recv = c.object.type === "Identifier" ? c.object.name : "";
-    if (m === "addEventListener") return ((galias.has(recv) && !tainted.has(recv)) || (!local.has(recv) && (recv === "window" || recv === "globalThis"))) && privateName(a);
+    if (m === "addEventListener") return isGlobalRef(c.object) && privateName(a);
     if (m === "getBuiltinModule") return recv === "process" && !local.has(recv) && a?.type === "Literal" && (a.value === "node:crypto" || a.value === "crypto");
     const ea = c.object;
     if ((m === "join" || m === "includes") && ea.type === "MemberExpression" && !ea.computed && ea.property.type === "Identifier" && ea.property.name === "execArgv" && ea.object.type === "Identifier" && ea.object.name === "process" && !local.has("process")) return true;
@@ -302,7 +314,7 @@ function decorativeInit(st: AnyNode, code: string): boolean {
         n = n.callee;
       } else break;
     }
-    const rooted = n.type === "CallExpression" || n.type === "ArrayExpression" || n.type === "Literal" || (n.type === "Identifier" && ((local.has(n.name) && !tainted.has(n.name) && !galias.has(n.name)) || (n.name === "Array" && m === "isArray")));
+    const rooted = n.type === "CallExpression" || (n.type === "ArrayExpression" && clean(n)) || n.type === "Literal" || (n.type === "Identifier" && ((local.has(n.name) && !tainted.has(n.name) && !galias.has(n.name)) || (n.name === "Array" && m === "isArray")));
     return rooted && COMPUTE_ONLY.has(m);
   };
   let ok = true;

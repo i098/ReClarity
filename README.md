@@ -6,6 +6,18 @@ BLA plants decoy code, floods REA's fixed limits and adds clean-looking shadow l
 
 ![BLA-hardened build vs ReClarity-cleaned copy: status, time and tokens](docs/bla-vs-reclarity.svg)
 
+## End-to-end recording
+
+[![ReClarity e2e v3 summary card](docs/media/summary.png)](docs/media/reclarity-e2e-v3.mp4)
+
+Click the card to play the 4 min recording (`docs/media/reclarity-e2e-v3.mp4`). All AI sessions ran on Claude Opus 5.5.
+
+- A, plain REA, cap override forbidden: stops at the 16 MiB ASAR limit. 0 of 3 answers.
+- B, REA + ReClarity (agent told to use it): 3 of 3 answers correct.
+- Auto-trigger does not work yet. With ReClarity installed but not mentioned, the agent raised the cap itself and had no answer after 15 min.
+- BLA hardening ran as a plain script. Opus 5.5 refused that prompt.
+- Limits: one run each, one model, one BLA seed (`e2e-1`). The build is an ASAR of JS tooling, not a native app.
+
 ## What it does
 
 - **Scan** a build for BLA trap shapes before the first REA call. Score 0 means plain REA.

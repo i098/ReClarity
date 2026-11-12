@@ -20,6 +20,18 @@ Run on 2026-11-08 on this host, recorded at commit 67c7245. Tool: `skills/anti-b
 
 BLA's ASAR header flood (4000 decoy entries, 17.4 MiB header) stops REA before any analysis. ReClarity drops the flood entries and REA runs again. Arm B shows the failure. Arm C restores the analysis and the IPC facts.
 
+## End-to-end recording
+
+[![ReClarity e2e v3 summary card](media/summary.png)](media/reclarity-e2e-v3.mp4)
+
+Click the card to play the 4 min recording (`media/reclarity-e2e-v3.mp4`). All AI sessions ran on Claude Opus 5.5.
+
+- A, plain REA, cap override forbidden: stops at the 16 MiB ASAR limit. 0 of 3 answers.
+- B, REA + ReClarity (agent told to use it): 3 of 3 answers correct.
+- Auto-trigger does not work yet. With ReClarity installed but not mentioned, the agent raised the cap itself and had no answer after 15 min.
+- BLA hardening ran as a plain script. Opus 5.5 refused that prompt.
+- Limits: one run each, one model, one BLA seed (`e2e-1`). The build is an ASAR of JS tooling, not a native app.
+
 ## What ReClarity did not fix
 
 Arm C is not equal to arm A:

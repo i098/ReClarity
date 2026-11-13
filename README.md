@@ -8,7 +8,7 @@ BLA plants decoy code, floods REA's fixed limits and adds clean-looking shadow l
 
 [![ReClarity e2e v3 recording, 6x speed preview](docs/media/reclarity-e2e-v3-preview.gif)](docs/media/reclarity-e2e-v3.mp4)
 
-Preview plays at 6x speed. Click it to play the full 4 min recording (`docs/media/reclarity-e2e-v3.mp4`). All AI sessions ran on Claude Opus 5.5.
+Play the full 4 min recording (`docs/media/reclarity-e2e-v3.mp4`). All AI sessions ran on Claude Opus 5.5.
 
 - A, plain REA, cap override forbidden: stops at the 16 MiB ASAR limit. 0 of 3 answers.
 - B, REA + ReClarity (agent told to use it): 3 of 3 answers correct.

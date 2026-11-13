@@ -4,8 +4,6 @@
 
 BLA plants decoy code, floods REA's fixed limits and adds clean-looking shadow logic. BLA must keep program behavior the same. ReClarity uses that rule.
 
-![BLA-hardened build vs ReClarity-cleaned copy: status, time and tokens](docs/bla-vs-reclarity.svg)
-
 ## End-to-end recording
 
 [![ReClarity e2e v3 recording, 6x speed preview](docs/media/reclarity-e2e-v3-preview.gif)](docs/media/reclarity-e2e-v3.mp4)

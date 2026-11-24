@@ -51,6 +51,13 @@ describe("fence (PostToolUse): tool results are data", () => {
     expect(c).not.toContain("planted by a BLA build");
   });
 
+  test("a failed Bash call (error field, no tool_response) goes to run.ts", () => {
+    const r = run("fence.ts", { hook_event_name: "PostToolUseFailure", tool_name: "Bash", error: "Error: header/index admission is limited (maximum_sentinels (65))" });
+    const o = JSON.parse(r.out).hookSpecificOutput;
+    expect(o.hookEventName).toBe("PostToolUseFailure");
+    expect(o.additionalContext).toContain("scripts/run.ts");
+  });
+
   test("a plain error is silent and never blocks", () => {
     const r = fence("ENOENT: no such file");
     expect([r.code, r.out]).toEqual([0, ""]);

@@ -8,6 +8,7 @@ ReClarity is anti-BLA for REA runs. This page is the entry point.
 - [Risks and their guards](risks.md).
 - [Install and use](usage.md): requirements, commands, REA triggers.
 - [Architecture](architecture.md): the flow and the tools.
+- [End-to-end recording](e2e-recording.md), [Measured comparison](measured-comparison.md), [Auto-trigger](auto-trigger.md), [Skills](skills.md), [Install and run](install.md).
 - [Proof](proof.md): A/B/C runs on a BLA-hardened sample app.
 
 ## Principles

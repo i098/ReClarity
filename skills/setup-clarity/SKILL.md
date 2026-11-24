@@ -11,9 +11,9 @@ Installs three small Bun hooks into the agent's hooks folder. They enforce the [
 | --- | --- | --- |
 | `session.ts` | SessionStart | Puts the three rules and the target list in context. |
 | `guard.ts` | PreToolUse | Blocks (exit 2) a write into a target, a shell change of a target, and a raw run of a target. The message names the sandbox command. |
-| `fence.ts` | PostToolUse | Never blocks. Flags BLA bait, forged chat turns, stop orders, "logic is elsewhere" claims, canary credentials and decoy symbols in any tool result, and sends capacity errors to `run.ts`. |
+| `fence.ts` | PostToolUse, PostToolUseFailure (Claude Code) | Never blocks. Flags BLA bait, forged chat turns, stop orders, "logic is elsewhere" claims, canary credentials and decoy symbols in any tool result, and sends capacity errors to `run.ts`. |
 
-Each hook reads the tool event as JSON on stdin. Claude Code, Codex and Gemini CLI use the same fields. A block is exit code 2 with the reason on stderr. Context goes out as `hookSpecificOutput.additionalContext`. Hook events are logged to `.reclarity/hooks.jsonl`.
+A REA run that hits a capacity limit exits non-zero. Claude Code reports a failed tool as `PostToolUseFailure`, so the fence is registered for both events; before this, the capacity route never fired. Each hook reads the tool event as JSON on stdin. Claude Code, Codex and Gemini CLI use the same fields. A block is exit code 2 with the reason on stderr. Context goes out as `hookSpecificOutput.additionalContext`. Hook events are logged to `.reclarity/hooks.jsonl`.
 
 ## Set up
 

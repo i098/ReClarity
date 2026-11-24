@@ -110,13 +110,15 @@ export function reboundNames(program: Program): Set<string> {
 export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
   const seeds: Seed[] = [];
   const rebound = reboundNames(program);
+  const digest = digestSeedValues(program, rebound, flag);
   for (const st of program.body) {
     if (st.type !== "VariableDeclaration" || st.kind !== "const") continue;
     for (const d of st.declarations) {
       const init = d.init;
       if (d.id.type !== "Identifier" || rebound.has(d.id.name) || !init || init.type !== "BinaryExpression" || init.operator !== "|") continue;
       const { left, right } = init;
-      if (left.type === "Literal" && typeof left.value === "number" && right.type === "ConditionalExpression" && isNum(right.consequent, 1) && isNum(right.alternate, 0)) {
+      if (digest.has(d)) seeds.push({ name: d.id.name, samples: [digest.get(d)!] });
+      else if (left.type === "Literal" && typeof left.value === "number" && right.type === "ConditionalExpression" && isNum(right.consequent, 1) && isNum(right.alternate, 0)) {
         const lo = left.value | 0;
         const hi = lo | 1;
         seeds.push({ name: d.id.name, samples: flag === "either" ? [lo, hi] : [flag === 1 ? hi : lo] });
@@ -128,12 +130,95 @@ export function findSeeds(program: Program, flag: SeedFlag = 1): Seed[] {
       }
     }
   }
-  return seeds;
+  return withAliases(program, seeds, rebound);
+}
+
+/** `var X = SEED;` where X is bound once and never assigned: X holds the seed value, so its reads fold too. */
+function withAliases(program: Program, seeds: Seed[], rebound: Set<string>): Seed[] {
+  if (!seeds.length) return seeds;
+  const assigned = new Set<string>();
+  walk(program, (n) => {
+    if (n.type === "AssignmentExpression" && n.left.type === "Identifier") assigned.add(n.left.name);
+    else if (n.type === "UpdateExpression" && n.argument.type === "Identifier") assigned.add(n.argument.name);
+  });
+  const out = [...seeds];
+  for (const st of program.body) {
+    if (st.type !== "VariableDeclaration") continue;
+    for (const d of st.declarations) {
+      const src = d.init?.type === "Identifier" ? seeds.find((s) => s.name === (d.init as AnyNode & { name: string }).name) : undefined;
+      if (src && d.id.type === "Identifier" && !rebound.has(d.id.name) && !assigned.has(d.id.name)) out.push({ name: d.id.name, samples: src.samples });
+    }
+  }
+  return out;
+}
+
+
+/**
+ * BLA 3.5.x seed: `const S = L | (F1.length >= 0 && ... && D === K ? 1 : 0)` where `D = digest(0)` is a top-level
+ * constant and `K` the digest the intact file gives. With the integrity bit set (flag 1) D is K, every `Fn.length >= 0`
+ * term is true, and L reads only literals and `Obj.prop[i]` cells of a top-level `new Uint32Array([...])`. Then S is one
+ * fixed number, so predicates on its higher bits fold too. Nothing runs: L is evaluated by the pure evaluator below.
+ * The cells must not be written between their declaration and S (only declarations sit there).
+ */
+function digestSeedValues(program: Program, rebound: Set<string>, flag: SeedFlag): Map<AnyNode, number> {
+  const out = new Map<AnyNode, number>();
+  if (flag !== 1) return out;
+  const cells = new Map<string, number[]>();
+  const fnNames = new Set<string>();
+  for (const [at, st] of program.body.entries()) {
+    if (st.type === "FunctionDeclaration" && st.id) fnNames.add(st.id.name);
+    if (st.type === "VariableDeclaration") {
+      for (const d of st.declarations) {
+        if (d.id.type !== "Identifier" || rebound.has(d.id.name) || d.init?.type !== "ObjectExpression") continue;
+        for (const p of d.init.properties) {
+          const v = p.type === "Property" && !p.computed && p.key.type === "Identifier" ? p.value : undefined;
+          const nums = v?.type === "NewExpression" && v.callee.type === "Identifier" && v.callee.name === "Uint32Array" && v.arguments.length === 1 && v.arguments[0]!.type === "ArrayExpression" ? v.arguments[0]!.elements : undefined;
+          if (nums?.every((e) => e?.type === "Literal" && typeof e.value === "number" && e.value >= 0 && e.value < 2 ** 32)) cells.set(`${d.id.name}.${((p as AnyNode & { key: { name: string } }).key).name}@${at}`, nums.map((e) => (e as AnyNode & { value: number }).value));
+        }
+      }
+    }
+  }
+  for (const [at, st] of program.body.entries()) {
+    if (st.type !== "VariableDeclaration" || st.kind !== "const") continue;
+    for (const d of st.declarations) {
+      const init = d.init;
+      if (d.id.type !== "Identifier" || rebound.has(d.id.name) || !init || init.type !== "BinaryExpression" || init.operator !== "|" || init.left.type === "PrivateIdentifier") continue;
+      const { left, right } = init;
+      if (right.type !== "ConditionalExpression" || !isNum(right.consequent, 1) || !isNum(right.alternate, 0) || left.type === "Literal") continue;
+      const env = new Map<string, number>();
+      const terms: AnyNode[] = [];
+      const split = (t: AnyNode): void => (t.type === "LogicalExpression" && t.operator === "&&" ? (split(t.left), split(t.right)) : void terms.push(t));
+      split(right.test);
+      const sound = terms.every((t) => {
+        if (t.type !== "BinaryExpression" || t.left.type !== "Identifier" || t.right.type !== "Literal" || typeof t.right.value !== "number") return false;
+        if (t.operator === ">=" && t.right.value === 0) return false; // `.length` terms are members, handled below
+        if (t.operator === "===") return !env.has(t.left.name) && !!env.set(t.left.name, t.right.value);
+        return false;
+      }) || terms.every((t) => {
+        if (t.type === "BinaryExpression" && t.operator === ">=" && isNum(t.right, 0) && t.left.type === "MemberExpression" && !t.left.computed && t.left.object.type === "Identifier" && t.left.property.type === "Identifier" && t.left.property.name === "length") return fnNames.has(t.left.object.name) && !rebound.has(t.left.object.name);
+        if (t.type === "BinaryExpression" && t.operator === "===" && t.left.type === "Identifier" && isNum(t.right)) return !env.has(t.left.name) && !!env.set(t.left.name, (t.right as AnyNode & { value: number }).value);
+        return false;
+      });
+      if (!sound || !env.size) continue;
+      const table = new Map<string, number[]>();
+      for (const [k, v] of cells) if (Number(k.split("@")[1]) < at) table.set(k.split("@")[0]!, v);
+      const between = program.body.slice(0, at).some((x, i) => i > [...cells.keys()].reduce((m, k) => Math.min(m, Number(k.split("@")[1])), at) && !["FunctionDeclaration", "VariableDeclaration", "ClassDeclaration"].includes(x.type));
+      if (between) continue;
+      tables = table;
+      read = new Set();
+      const v = ev(left as Expression, env);
+      tables = new Map();
+      if (typeof v === "number") out.set(d, v | 1);
+    }
+  }
+  return out;
 }
 
 type Val = string | number | boolean;
 const NO = Symbol("no");
 let read = new Set<string>();
+/** `Obj.prop` -> values of a `new Uint32Array([...])` cell; set only while a 3.5.x seed is evaluated. */
+let tables = new Map<string, number[]>();
 
 function ev(n: Expression, env: Map<string, number>): Val | typeof NO {
   switch (n.type) {
@@ -143,7 +228,13 @@ function ev(n: Expression, env: Map<string, number>): Val | typeof NO {
       if (!env.has(n.name)) return NO;
       read.add(n.name);
       return env.get(n.name)!;
+    case "MemberExpression": {
+      const o = n.object;
+      if (!n.computed || n.property.type !== "Literal" || typeof n.property.value !== "number" || o.type !== "MemberExpression" || o.computed || o.object.type !== "Identifier" || o.property.type !== "Identifier") return NO;
+      return tables.get(`${o.object.name}.${o.property.name}`)?.[n.property.value] ?? NO;
+    }
     case "UnaryExpression": {
+      if (n.operator === "typeof") return n.argument.type === "Identifier" && env.has(n.argument.name) ? (read.add(n.argument.name), "number") : NO;
       const v = ev(n.argument, env);
       if (v === NO) return NO;
       switch (n.operator) {

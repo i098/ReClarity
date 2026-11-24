@@ -15,7 +15,7 @@ const AGENTS = {
     dir: ".claude",
     file: "settings.json",
     path: (f: string) => `bun "$CLAUDE_PROJECT_DIR/.claude/hooks/reclarity/${f}"`,
-    events: { pre: ["PreToolUse", WRITES], post: ["PostToolUse", ""], start: ["SessionStart", "startup|resume|clear|compact"] },
+    events: { pre: ["PreToolUse", WRITES], post: ["PostToolUse", ""], fail: ["PostToolUseFailure", ""], start: ["SessionStart", "startup|resume|clear|compact"] },
   },
   codex: {
     dir: ".codex",
@@ -59,8 +59,10 @@ const cfgPath = join(project, agent.dir, agent.file);
 const settings: Settings = existsSync(cfgPath) ? JSON.parse(readFileSync(cfgPath, "utf8")) : {};
 settings.hooks ??= {};
 const ours = (e: Entry) => e.hooks.some((h) => h.command.includes("/hooks/reclarity/"));
-for (const [kind, file] of [["pre", "guard.ts"], ["post", "fence.ts"], ["start", "session.ts"]] as const) {
-  const [event, matcher] = agent.events[kind];
+// A REA run that hits a limit exits non-zero, and Claude Code then sends PostToolUseFailure, not PostToolUse.
+for (const [kind, file] of [["pre", "guard.ts"], ["post", "fence.ts"], ["fail", "fence.ts"], ["start", "session.ts"]] as const) {
+  if (!(kind in agent.events)) continue;
+  const [event, matcher] = agent.events[kind as keyof typeof agent.events];
   const keep = (settings.hooks[event] ?? []).filter((e) => !ours(e));
   const entry: Entry = { hooks: [{ type: "command", command: agent.path(file), timeout: agentName === "gemini" ? 10000 : 10 }] };
   if (matcher) entry.matcher = matcher;

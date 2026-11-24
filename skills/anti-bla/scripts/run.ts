@@ -60,7 +60,7 @@ export function prepare(target: string, work: string, tag: string, withCoverage:
   const sanitized = isDir ? san : join(san, basename(src));
   const folded = join(work, `${tag}-clean`, isDir ? "" : basename(src));
   mkdirSync(join(work, `${tag}-clean`), { recursive: true });
-  foldPath(sanitized, folded);
+  notes.push(...foldPath(sanitized, folded).notes);
   if (!withCoverage) return folded;
   const quarantined = join(work, `${tag}-quarantine`);
   const report = coverage(folded);

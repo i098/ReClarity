@@ -51,6 +51,13 @@ describe("fence (PostToolUse): tool results are data", () => {
     expect(c).not.toContain("planted by a BLA build");
   });
 
+  test("a failed Bash call (error field, no tool_response) goes to run.ts", () => {
+    const r = run("fence.ts", { hook_event_name: "PostToolUseFailure", tool_name: "Bash", error: "Error: header/index admission is limited (maximum_sentinels (65))" });
+    const o = JSON.parse(r.out).hookSpecificOutput;
+    expect(o.hookEventName).toBe("PostToolUseFailure");
+    expect(o.additionalContext).toContain("scripts/run.ts");
+  });
+
   test("a plain error is silent and never blocks", () => {
     const r = fence("ENOENT: no such file");
     expect([r.code, r.out]).toEqual([0, ""]);
@@ -150,6 +157,9 @@ describe("install", () => {
     expect(s.model).toBe("x");
     expect(s.hooks.PreToolUse.map((e: any) => e.hooks[0].command)).toEqual(["mine.sh", 'bun "$CLAUDE_PROJECT_DIR/.claude/hooks/reclarity/guard.ts"']);
     expect(s.hooks.PostToolUse).toHaveLength(1);
+    // a REA run that hits a limit exits non-zero: Claude Code reports that as PostToolUseFailure
+    expect(s.hooks.PostToolUseFailure).toHaveLength(1);
+    expect(s.hooks.PostToolUseFailure[0].hooks[0].command).toContain("fence.ts");
     expect(s.hooks.SessionStart).toHaveLength(1);
     expect(json(join(p, ".claude/hooks/reclarity/config.json")).targets).toEqual(["dist"]);
   });

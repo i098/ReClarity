@@ -62,11 +62,13 @@ const treeBytes = (p: string) => (existsSync(p) ? walkFiles(p).reduce((n, f) => 
 const trapCount = (p: string): number => (existsSync(p) ? walkFiles(p).filter((f) => !lstatSync(f).isSymbolicLink() && statSync(f).size < 64e6).reduce((n, f) => n + (readFileSync(f).toString("latin1").match(new RegExp(TRAP.source, "gi"))?.length ?? 0), 0) : 0);
 
 // ---- oracles ----
-const baseJs = (() => {
-  const r = sh(`node check.cjs app`, FX);
+const baseline = (cmd: string): string => {
+  const r = sh(cmd, FX);
+  if (r.code !== 0 || !r.out.trim()) throw new Error(`baseline failed (${cmd}): exit ${r.code} ${r.err}`);
   return r.out.trim();
-})();
-const basePy = sh(`python3 check_py.py release/engine.py`, FX).out.trim();
+};
+const baseJs = baseline(`node check.cjs app`);
+const basePy = baseline(`python3 check_py.py release/engine.py`);
 
 function jsOracle(root: string): "equal" | "diff" | "crash" {
   const rt = join(work, `rt-${Math.random().toString(36).slice(2)}`);
@@ -240,7 +242,12 @@ function formatRows(): Record<string, { arm: Arm; result: "restored" | "changed"
 }
 
 mkdirSync(work, { recursive: true });
-const git = (d: string) => sh(`git -C ${d} rev-parse --short HEAD`).out.trim();
+const git = (d: string) => {
+  const h = sh(`git -C ${d} rev-parse HEAD`);
+  const s = sh(`git -C ${d} status --porcelain`);
+  if (h.code !== 0 || s.code !== 0) throw new Error(`git failed in ${d}: ${h.err}${s.err}`);
+  return `${h.out.trim()}${s.out.trim() ? "+dirty" : ""}`;
+};
 const result = {
   date: new Date().toISOString(),
   host: { node: process.version, bun: Bun.version, load1: loadavg()[0] },

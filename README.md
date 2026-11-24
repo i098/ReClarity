@@ -18,7 +18,7 @@ Play the full 4 min recording (`docs/media/reclarity-e2e-v3.mp4`). All AI sessio
 
 ## Measured comparison
 
-Plain REA, REA + [LASIK](https://github.com/pktq/lasik) 0.3.2 (`be5a1b1`) and REA + ReClarity, on the same BLA-hardened builds. The harness is [`docs/benchmark/bench-lasik.ts`](docs/benchmark/bench-lasik.ts); raw results are in [`docs/benchmark/results/`](docs/benchmark/results) (`before.json` = ReClarity at `main`, `after.json` = ReClarity with this change). The test does not run REA or an agent. A prepared copy counts as **correct** when the program gives the same output as on the unhardened app (the oracles `fixtures/check.cjs` and `check_py.py`, a SQLite view query); a copy that crashes or answers differently is wrong, however small it is. Samples: BLA 3.2.1 and 3.5.9, five JS seeds each (`s1 s2 s3 s4all s5bal`), plus one ASAR + Python + SQLite release per version. Host load was 190 to 295 during the runs, so times are only comparable inside one run. One run per cell.
+Plain REA, REA + [LASIK](https://github.com/pktq/lasik) 0.3.2 (`be5a1b1`) and REA + ReClarity, on the same BLA-hardened builds. The harness is [`docs/benchmark/bench-lasik.ts`](docs/benchmark/bench-lasik.ts); raw results are in [`docs/benchmark/results/`](docs/benchmark/results) (`before.json` records an empty `reclarity` revision and `after.json` records `92fa888`, the base commit; neither records a dirty flag, so the mapping to `main` and to this change comes from the run order, not from the files). The test does not run REA or an agent. A prepared copy counts as **correct** when the program gives the same output as on the unhardened app (the oracles `fixtures/check.cjs` and `check_py.py`, a SQLite view query); a copy that crashes or answers differently is wrong, however small it is. Samples: BLA 3.2.1 and 3.5.9, five JS seeds each (`s1 s2 s3 s4all s5bal`), plus one ASAR + Python + SQLite release per version. Host load was 190 to 295 during the runs, so times are only comparable inside one run. One run per cell.
 
 Correct answers, of 5 JS seeds and of the 3 release files (ASAR, Python, SQLite):
 
@@ -52,19 +52,21 @@ Time to prepare one build (ms, one run under load; ReClarity Python includes the
 | --- | --- | --- | --- | --- |
 | 3.5.9 | LASIK | 11331 | 7624 | 7624 (same run) |
 | 3.5.9 | ReClarity after | 1876 | 2859 | 4361 |
+| 3.5.9 | ReClarity after, release + Python runs | | 7220 | (sum) |
 | 3.2.1 | LASIK | 4357 | 15647 | 15647 (same run) |
 | 3.2.1 | ReClarity after | 801 | 1555 | 3089 |
+| 3.2.1 | ReClarity after, release + Python runs | | 4644 | (sum) |
 
-Formats, 13 BLA fixtures (EVM, Flutter, PCAP, SQLite, Go ELF, Python source, `.pyc` 3.7 to 3.14, BEAM, GGUF, safetensors, WASM). A format is *restored* when the output equals the unhardened file byte for byte: plain 0, LASIK 6, ReClarity 8 (4 changed, 1 unchanged; LASIK 6 changed, 1 unchanged). The results are identical before and after this change.
+Formats, 13 BLA fixtures (EVM, Flutter, PCAP, SQLite, Go ELF, Python source, `.pyc` 3.7, 3.12 and 3.14, BEAM, GGUF, safetensors, WASM). A format is *restored* when the output equals the unhardened file byte for byte: plain 0, LASIK 6, ReClarity 8 (4 changed, 1 unchanged; LASIK 6 changed, 1 unchanged). The results are identical before and after this change.
 
 What this change did, from `before.json` to `after.json`:
 
-- BLA 3.5.x JS: ReClarity folded nothing on 3.5.9 and now removes 35 to 36 percent of the bytes of `s1 s2 s3 s5bal`, behaviour equal on all.
+- BLA 3.5.x JS: ReClarity folded nothing on 3.5.9 and now removes 34.7 to 36 percent of the bytes of `s1 s2 s3 s5bal`, behaviour equal on all.
 - BLA 3.5.x Python: 44907 to 1231 bytes, behaviour equal. LASIK left this file unchanged.
 - A multi-file `--self-seal` build (`s4all`) crashed after ReClarity on 3.2.1. It is now left unchanged and reported as `selfSealed`; the answer stays correct but the build is not reduced (3.2.1 and 3.5.9).
 - `scan.ts` now notes when a build uses shapes newer than the pinned BLA 3.2.2.
 
-Limits: one run per cell; five seeds; one host under heavy load; one release per BLA version; "correct" means the oracle output, not an agent's final answer. ReClarity on 3.5.9 still leaves 79 to 111 lure words per JS seed and does not shrink self-sealed builds. LASIK's own claims were not tested beyond the builds above. Rerun: `bun docs/benchmark/bench-lasik.ts --bla 3.5.9=<bla> --bla 3.2.1=<bla> --lasik <lasik>/dist/cli.js --work /tmp/bench --out docs/benchmark/results/after.json` (needs `bla-agents` 3.2.1 and 3.5.9 and a built LASIK).
+Limits: one run per cell; five seeds; one host under heavy load; one release per BLA version; "correct" means the oracle output, not an agent's final answer. ReClarity on 3.5.9 still leaves 79 to 111 lure words per JS seed and does not shrink self-sealed builds. LASIK's own claims were not tested beyond the builds above. Rerun: `bun docs/benchmark/bench-lasik.ts --bla 3.5.9=<bla> --bla 3.2.1=<bla> --lasik <lasik>/dist/cli.js --work /tmp/bench --out docs/benchmark/results/after.json` (needs `node`, `python3`, `bla-agents` 3.2.1 and 3.5.9 and a built LASIK).
 
 ## Auto-trigger
 

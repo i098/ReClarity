@@ -152,7 +152,6 @@ function withAliases(program: Program, seeds: Seed[], rebound: Set<string>): See
   return out;
 }
 
-const isFn = (st: AnyNode, name: string): boolean => st.type === "FunctionDeclaration" && st.id?.name === name;
 
 /**
  * BLA 3.5.x seed: `const S = L | (F1.length >= 0 && ... && D === K ? 1 : 0)` where `D = digest(0)` is a top-level

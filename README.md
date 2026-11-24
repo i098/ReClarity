@@ -18,7 +18,7 @@ Play the full 4 min recording (`docs/media/reclarity-e2e-v3.mp4`). All AI sessio
 
 ## Measured comparison
 
-Plain REA, REA + [LASIK](https://github.com/pktq/lasik) 0.3.2 (`be5a1b1`) and REA + ReClarity, on the same BLA-hardened builds. The harness is [`docs/benchmark/bench-lasik.ts`](docs/benchmark/bench-lasik.ts); raw results are in [`docs/benchmark/results/`](docs/benchmark/results) (`before.json` records an empty `reclarity` revision and `after.json` records `92fa888`, the base commit; neither records a dirty flag, so the mapping to `main` and to this change comes from the run order, not from the files). The test does not run REA or an agent. A prepared copy counts as **correct** when the program gives the same output as on the unhardened app (the oracles `fixtures/check.cjs` and `check_py.py`, a SQLite view query); a copy that crashes or answers differently is wrong, however small it is. Samples: BLA 3.2.1 and 3.5.9, five JS seeds each (`s1 s2 s3 s4all s5bal`), plus one ASAR + Python + SQLite release per version. Host load was 190 to 295 during the runs, so times are only comparable inside one run. One run per cell.
+Plain REA, REA + [LASIK](https://github.com/pktq/lasik) 0.3.2 (`be5a1b1`) and REA + ReClarity, on the same BLA-hardened builds. The harness is [`docs/benchmark/bench-lasik.ts`](docs/benchmark/bench-lasik.ts); raw results are in [`docs/benchmark/results/`](docs/benchmark/results) (`before.json`: ReClarity at `92fa888`, the base commit, with this harness copied over it, so it records `+dirty`; `after.json`: ReClarity at `287f54e` plus the uncommitted `before.json`, so it also records `+dirty`. Each file records the full commit SHA). The test does not run REA or an agent. A prepared copy counts as **correct** when the program gives the same output as on the unhardened app (the oracles `fixtures/check.cjs` and `check_py.py`, a SQLite view query); a copy that crashes or answers differently is wrong, however small it is. Samples: BLA 3.2.1 and 3.5.9, five JS seeds each (`s1 s2 s3 s4all s5bal`), plus one ASAR + Python + SQLite release per version. Host load was 190 to 295 during the runs, so times are only comparable inside one run. One run per cell.
 
 Correct answers, of 5 JS seeds and of the 3 release files (ASAR, Python, SQLite):
 
@@ -50,12 +50,14 @@ Time to prepare one build (ms, one run under load; ReClarity Python includes the
 
 | BLA | Arm | JS `s1` | Release (ASAR + SQLite) | Python |
 | --- | --- | --- | --- | --- |
-| 3.5.9 | LASIK | 11331 | 7624 | 7624 (same run) |
-| 3.5.9 | ReClarity after | 1876 | 2859 | 4361 |
-| 3.5.9 | ReClarity after, release + Python runs | | 7220 | (sum) |
-| 3.2.1 | LASIK | 4357 | 15647 | 15647 (same run) |
-| 3.2.1 | ReClarity after | 801 | 1555 | 3089 |
-| 3.2.1 | ReClarity after, release + Python runs | | 4644 | (sum) |
+| 3.5.9 | LASIK | 17971 | 5318 | 5318 (same run) |
+| 3.5.9 | ReClarity after | 2199 | 1601 | 3271 |
+| 3.5.9 | ReClarity after, release + Python runs | | 4872 | (sum) |
+| 3.2.1 | LASIK | 7386 | 4922 | 4922 (same run) |
+| 3.2.1 | ReClarity after | 985 | 1087 | 3811 |
+| 3.2.1 | ReClarity after, release + Python runs | | 4898 | (sum) |
+
+Like for like (one release directory), ReClarity needs two runs: on 3.5.9 4872 ms against LASIK 5318 ms; on 3.2.1 4898 ms against 4922 ms. These are near ties at host load 168. On the JS seeds ReClarity is faster in every recorded cell.
 
 Formats, 13 BLA fixtures (EVM, Flutter, PCAP, SQLite, Go ELF, Python source, `.pyc` 3.7, 3.12 and 3.14, BEAM, GGUF, safetensors, WASM). A format is *restored* when the output equals the unhardened file byte for byte: plain 0, LASIK 6, ReClarity 8 (4 changed, 1 unchanged; LASIK 6 changed, 1 unchanged). The results are identical before and after this change.
 

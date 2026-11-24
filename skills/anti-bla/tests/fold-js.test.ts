@@ -340,3 +340,14 @@ describe("fold-js keeps shadow-runtime look-alikes that the program can observe"
     ]) expect(foldJs(init(body)).stats.shadowRuntimeRemoved).toBe(0);
   });
 });
+
+test("foldPath leaves a build unchanged when two files carry the self-seal check", () => {
+  const d = join(tmp, "sealed");
+  mkdirSync(d, { recursive: true });
+  const body = "const S = 4 | (1 === 1 ? 1 : 0);\nif (S & 1) { console.log('x'); }\nif (new Error('integrity check failed').message.length < 0) throw 1;\n";
+  writeFileSync(join(d, "a.js"), body);
+  writeFileSync(join(d, "b.js"), body);
+  const rep = foldPath(d, join(tmp, "sealed-out"));
+  expect(rep.selfSealed).toBe(true);
+  expect(readFileSync(join(tmp, "sealed-out/a.js"), "utf8")).toBe(body);
+});

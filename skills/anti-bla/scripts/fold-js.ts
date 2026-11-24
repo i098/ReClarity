@@ -33,7 +33,7 @@ function foldPass(src: string, seeds: Seed[], stats: FoldStats): string {
       if (t) {
         stats.branchesDropped++;
         const live = t.value ? n.consequent : n.alternate;
-        return live ? render(live) : ";";
+        return live ? render(live, n) : ";";
       }
     } else if (["BinaryExpression", "LogicalExpression", "UnaryExpression", "ConditionalExpression", "CallExpression"].includes(n.type)) {
       const whole = opaqueValue(n as never, seeds);
@@ -45,7 +45,7 @@ function foldPass(src: string, seeds: Seed[], stats: FoldStats): string {
         const t = opaqueValue(n.test, seeds);
         if (t) {
           stats.branchesDropped++;
-          return `(${render(t.value ? n.consequent : n.alternate)})`;
+          return `(${render(t.value ? n.consequent : n.alternate, n)})`;
         }
       }
     }

@@ -1,0 +1,677 @@
+{
+  "date": "2026-11-24T10:16:37.526Z",
+  "host": {
+    "node": "v26.3.0",
+    "bun": "1.4.4",
+    "load1": 294.95
+  },
+  "reclarity": "",
+  "lasik": "be5a1b1",
+  "versions": {
+    "3.5.9": {
+      "bla": "3.5.9",
+      "js": {
+        "s1": [
+          {
+            "arm": "plain",
+            "bytesBefore": 661465,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 661465,
+            "trapWords": 152
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 661465,
+            "behaviour": "diff",
+            "prepMs": 20147,
+            "bytesAfter": 585172,
+            "trapWords": 85
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 661465,
+            "behaviour": "equal",
+            "prepMs": 282,
+            "bytesAfter": 661465,
+            "trapWords": 152
+          }
+        ],
+        "s2": [
+          {
+            "arm": "plain",
+            "bytesBefore": 662919,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 662919,
+            "trapWords": 155
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 662919,
+            "behaviour": "diff",
+            "prepMs": 17243,
+            "bytesAfter": 581612,
+            "trapWords": 84
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 662919,
+            "behaviour": "equal",
+            "prepMs": 141,
+            "bytesAfter": 662919,
+            "trapWords": 155
+          }
+        ],
+        "s3": [
+          {
+            "arm": "plain",
+            "bytesBefore": 664698,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 664698,
+            "trapWords": 148
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 664698,
+            "behaviour": "diff",
+            "prepMs": 19591,
+            "bytesAfter": 584142,
+            "trapWords": 83
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 664698,
+            "behaviour": "equal",
+            "prepMs": 337,
+            "bytesAfter": 664698,
+            "trapWords": 148
+          }
+        ],
+        "s4all": [
+          {
+            "arm": "plain",
+            "bytesBefore": 694173,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 694173,
+            "trapWords": 151
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 694173,
+            "behaviour": "crash",
+            "prepMs": 21742,
+            "bytesAfter": 612809,
+            "trapWords": 108
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 694173,
+            "behaviour": "equal",
+            "prepMs": 313,
+            "bytesAfter": 694173,
+            "trapWords": 151
+          }
+        ],
+        "s5bal": [
+          {
+            "arm": "plain",
+            "bytesBefore": 290660,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 290660,
+            "trapWords": 108
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 290660,
+            "behaviour": "diff",
+            "prepMs": 8920,
+            "bytesAfter": 250531,
+            "trapWords": 59
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 290660,
+            "behaviour": "equal",
+            "prepMs": 55,
+            "bytesAfter": 290660,
+            "trapWords": 108
+          }
+        ]
+      },
+      "release": {
+        "asar": [
+          {
+            "arm": "plain",
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesBefore": 24450715,
+            "bytesAfter": 24450715,
+            "trapWords": 0,
+            "note": "ASAR header 20006293 B"
+          },
+          {
+            "arm": "lasik",
+            "behaviour": "diff",
+            "prepMs": 14393,
+            "bytesBefore": 24450715,
+            "bytesAfter": 24221920,
+            "trapWords": 0,
+            "note": "ASAR header 20003135 B"
+          },
+          {
+            "arm": "reclarity",
+            "behaviour": "equal",
+            "prepMs": 1685,
+            "bytesBefore": 24450715,
+            "bytesAfter": 5599223,
+            "trapWords": 0,
+            "note": "ASAR header 4156801 B"
+          }
+        ],
+        "python": [
+          {
+            "arm": "plain",
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesBefore": 44907,
+            "bytesAfter": 44907,
+            "trapWords": 45
+          },
+          {
+            "arm": "lasik",
+            "behaviour": "equal",
+            "prepMs": 14393,
+            "bytesBefore": 44907,
+            "bytesAfter": 44907,
+            "trapWords": 45
+          },
+          {
+            "arm": "reclarity",
+            "behaviour": "equal",
+            "prepMs": 1685,
+            "bytesBefore": 44907,
+            "bytesAfter": 44907,
+            "trapWords": 45
+          }
+        ],
+        "sqlite": [
+          {
+            "arm": "plain",
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesBefore": 49152,
+            "bytesAfter": 49152,
+            "trapWords": 18,
+            "note": "6 non-user objects left"
+          },
+          {
+            "arm": "lasik",
+            "behaviour": "equal",
+            "prepMs": 14393,
+            "bytesBefore": 49152,
+            "bytesAfter": 49152,
+            "trapWords": 17,
+            "note": "4 non-user objects left"
+          },
+          {
+            "arm": "reclarity",
+            "behaviour": "equal",
+            "prepMs": 1685,
+            "bytesBefore": 49152,
+            "bytesAfter": 16384,
+            "trapWords": 0,
+            "note": "1 non-user objects left"
+          }
+        ]
+      }
+    },
+    "3.2.1": {
+      "bla": "3.2.1",
+      "js": {
+        "s1": [
+          {
+            "arm": "plain",
+            "bytesBefore": 414602,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 414602,
+            "trapWords": 232
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 414602,
+            "behaviour": "crash",
+            "prepMs": 7990,
+            "bytesAfter": 2794,
+            "trapWords": 0
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 414602,
+            "behaviour": "equal",
+            "prepMs": 1119,
+            "bytesAfter": 129734,
+            "trapWords": 79
+          }
+        ],
+        "s2": [
+          {
+            "arm": "plain",
+            "bytesBefore": 414315,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 414315,
+            "trapWords": 241
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 414315,
+            "behaviour": "crash",
+            "prepMs": 7236,
+            "bytesAfter": 2794,
+            "trapWords": 0
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 414315,
+            "behaviour": "equal",
+            "prepMs": 1061,
+            "bytesAfter": 129582,
+            "trapWords": 82
+          }
+        ],
+        "s3": [
+          {
+            "arm": "plain",
+            "bytesBefore": 413096,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 413096,
+            "trapWords": 225
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 413096,
+            "behaviour": "crash",
+            "prepMs": 8087,
+            "bytesAfter": 2794,
+            "trapWords": 0
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 413096,
+            "behaviour": "equal",
+            "prepMs": 1144,
+            "bytesAfter": 128762,
+            "trapWords": 81
+          }
+        ],
+        "s4all": [
+          {
+            "arm": "plain",
+            "bytesBefore": 428408,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 428408,
+            "trapWords": 221
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 428408,
+            "behaviour": "crash",
+            "prepMs": 8425,
+            "bytesAfter": 2794,
+            "trapWords": 0
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 428408,
+            "behaviour": "crash",
+            "prepMs": 1150,
+            "bytesAfter": 141222,
+            "trapWords": 74
+          }
+        ],
+        "s5bal": [
+          {
+            "arm": "plain",
+            "bytesBefore": 226482,
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesAfter": 226482,
+            "trapWords": 147
+          },
+          {
+            "arm": "lasik",
+            "bytesBefore": 226482,
+            "behaviour": "crash",
+            "prepMs": 5103,
+            "bytesAfter": 2797,
+            "trapWords": 0
+          },
+          {
+            "arm": "reclarity",
+            "bytesBefore": 226482,
+            "behaviour": "equal",
+            "prepMs": 638,
+            "bytesAfter": 72590,
+            "trapWords": 50
+          }
+        ]
+      },
+      "release": {
+        "asar": [
+          {
+            "arm": "plain",
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesBefore": 18169424,
+            "bytesAfter": 18169424,
+            "trapWords": 0,
+            "note": "ASAR header 17444220 B"
+          },
+          {
+            "arm": "lasik",
+            "behaviour": "crash",
+            "prepMs": 6053,
+            "bytesBefore": 18169424,
+            "bytesAfter": 3876,
+            "trapWords": 0,
+            "note": "ASAR header 1014 B"
+          },
+          {
+            "arm": "reclarity",
+            "behaviour": "equal",
+            "prepMs": 1829,
+            "bytesBefore": 18169424,
+            "bytesAfter": 6825,
+            "trapWords": 0,
+            "note": "ASAR header 677 B"
+          }
+        ],
+        "python": [
+          {
+            "arm": "plain",
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesBefore": 41121,
+            "bytesAfter": 41121,
+            "trapWords": 48
+          },
+          {
+            "arm": "lasik",
+            "behaviour": "equal",
+            "prepMs": 6053,
+            "bytesBefore": 41121,
+            "bytesAfter": 1183,
+            "trapWords": 0
+          },
+          {
+            "arm": "reclarity",
+            "behaviour": "equal",
+            "prepMs": 1829,
+            "bytesBefore": 41121,
+            "bytesAfter": 41121,
+            "trapWords": 48
+          }
+        ],
+        "sqlite": [
+          {
+            "arm": "plain",
+            "behaviour": "equal",
+            "prepMs": 0,
+            "bytesBefore": 57344,
+            "bytesAfter": 57344,
+            "trapWords": 30,
+            "note": "6 non-user objects left"
+          },
+          {
+            "arm": "lasik",
+            "behaviour": "equal",
+            "prepMs": 6053,
+            "bytesBefore": 57344,
+            "bytesAfter": 12288,
+            "trapWords": 0,
+            "note": "0 non-user objects left"
+          },
+          {
+            "arm": "reclarity",
+            "behaviour": "equal",
+            "prepMs": 1829,
+            "bytesBefore": 57344,
+            "bytesAfter": 12288,
+            "trapWords": 0,
+            "note": "0 non-user objects left"
+          }
+        ]
+      }
+    }
+  },
+  "formats": {
+    "app.bla.evm": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "restored",
+        "ms": 635
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 4
+      }
+    ],
+    "app.bla.flutter.so": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "changed",
+        "ms": 453
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 6
+      }
+    ],
+    "app.bla.pcap": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "restored",
+        "ms": 382
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 2
+      }
+    ],
+    "app.bla.sqlite": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "changed",
+        "ms": 579
+      },
+      {
+        "arm": "reclarity",
+        "result": "changed",
+        "ms": 101
+      }
+    ],
+    "go.bla.elf": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "changed",
+        "ms": 556
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 3
+      }
+    ],
+    "ledger.bla.py": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "changed",
+        "ms": 565
+      },
+      {
+        "arm": "reclarity",
+        "result": "unchanged",
+        "ms": 2
+      }
+    ],
+    "ledger.py312.bla.pyc": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "changed",
+        "ms": 967
+      },
+      {
+        "arm": "reclarity",
+        "result": "changed",
+        "ms": 711
+      }
+    ],
+    "ledger.py314.bla.pyc": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "changed",
+        "ms": 686
+      },
+      {
+        "arm": "reclarity",
+        "result": "changed",
+        "ms": 656
+      }
+    ],
+    "ledger.py37.bla.pyc": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "unchanged",
+        "ms": 999
+      },
+      {
+        "arm": "reclarity",
+        "result": "changed",
+        "ms": 1284
+      }
+    ],
+    "tiny.bla.beam": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "restored",
+        "ms": 480
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 5
+      }
+    ],
+    "tiny.bla.gguf": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "restored",
+        "ms": 546
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 8
+      }
+    ],
+    "tiny.bla.safetensors": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "restored",
+        "ms": 425
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 3
+      }
+    ],
+    "tiny.bla.wasm": [
+      {
+        "arm": "plain",
+        "result": "unchanged",
+        "ms": 0
+      },
+      {
+        "arm": "lasik",
+        "result": "restored",
+        "ms": 514
+      },
+      {
+        "arm": "reclarity",
+        "result": "restored",
+        "ms": 4
+      }
+    ]
+  }
+}

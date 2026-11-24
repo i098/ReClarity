@@ -146,7 +146,7 @@ function findMembers(lines: string[], stmts: PyStmtFacts[]): Tarpit {
     } else if (s.kind === "Assign" && HEX_UP.test(one) && STATE_RE.exec(t)?.[1] === one) {
       states.add(one);
       cand.push({ index, defines: one });
-    } else if (s.kind === "AnnAssign" && HEX_UP.test(one) && SLOT_RE.exec(t)?.[1] === one) {
+    } else if ((s.kind === "AnnAssign" || s.kind === "Assign") && HEX_UP.test(one) && SLOT_RE.exec(t)?.[1] === one) {
       slots.add(one);
       cand.push({ index, defines: one });
     } else if (s.kind === "Assign" && HEX_UP.test(one) && MANIFEST_RE.exec(t)?.[1] === one && !s.impure && s.free.length === 0) {

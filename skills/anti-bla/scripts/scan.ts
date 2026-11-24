@@ -99,9 +99,15 @@ const MAX_FILES = 2000;
 const MAX_ASAR_JS = 300;
 const SKIP_DIRS = ["node_modules", ".git"];
 
+/** BLA 3.5.x: JS seed state in `_env.<name>_slot_frame_sm_<n>` slots; Python tarpit names end in 4 base-36 characters (3.2.x: hex). */
+const NEWER_JS = /\b_env\.\w+_slot_frame_sm_\d+/;
+const NEWER_PY = /^def [a-z0-9_]+_(?=[0-9a-z]{0,3}[g-z])[0-9a-z]{4}\(_?seed: int = 0/m;
+
 class Acc {
   map = new Map<string, Finding>();
   notes: string[] = [];
+  /** Shapes only a BLA newer than the pin emits. */
+  newer = false;
   add(id: string, where: string, n = 1): void {
     if (n <= 0) return;
     const f = this.map.get(id) ?? { id, count: 0, where: [] };
@@ -158,6 +164,7 @@ function scanRuns(body: AnyNode[], acc: Acc, label: string): void {
 }
 
 function scanJs(src: string, label: string, acc: Acc): void {
+  if (NEWER_JS.test(src)) acc.newer = true;
   acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
   acc.add("agent_directive", label, src.match(DIRECTIVE)?.length ?? 0);
   acc.add("enclave_words", label, src.match(ENCLAVE)?.length ?? 0);
@@ -226,6 +233,7 @@ function scanJs(src: string, label: string, acc: Acc): void {
 
 /** BLA's Python tarpit in a `.py` file, from text shapes alone. */
 function scanPy(src: string, label: string, acc: Acc): void {
+  if (NEWER_PY.test(src)) acc.newer = true;
   acc.add("python_tarpit", label, tarpitDecoyCount(src));
   acc.add("bait_text", label, src.match(BAIT)?.length ?? 0);
   acc.add("agent_directive", label, src.match(DIRECTIVE)?.length ?? 0);
@@ -434,7 +442,7 @@ export function scan(target: string): ScanReport {
     score,
     level: score === 0 ? "none" : score < 40 ? "suspect" : "hardened",
     findings,
-    notes: [...acc.notes, ...(score ? [`signatures pinned to BLA ${BLA_VERSION}; a newer BLA may use shapes this scan misses`] : [])],
+    notes: [...acc.notes, ...(acc.newer ? [`this build uses shapes newer than BLA ${BLA_VERSION}; the 3.5.x shapes are folded and cleaned (checked on 3.5.9 samples), anything else of a newer BLA may be missed`] : []), ...(score ? [`signatures pinned to BLA ${BLA_VERSION}; a newer BLA may use shapes this scan misses`] : [])],
   };
 }
 

@@ -25,9 +25,22 @@ export interface FoldResult {
 
 const literal = (v: string | number | boolean): string => (typeof v === "string" ? JSON.stringify(v) : typeof v === "number" && v < 0 ? `(${v})` : String(v));
 
+/** A read of a seed that holds one fixed number (a BLA 3.5.x digest seed): the number itself. */
+function seedRead(n: AnyNode, parent: AnyNode | undefined, fixed: Map<string, number>): string | undefined {
+  if (n.type !== "Identifier" || !fixed.has(n.name) || !parent) return undefined;
+  const name = parent.type === "VariableDeclarator" ? parent.id : parent.type === "MemberExpression" && !parent.computed ? parent.property : (parent.type === "Property" || parent.type === "PropertyDefinition" || parent.type === "MethodDefinition") && ("shorthand" in parent && parent.shorthand ? true : !parent.computed) ? parent.key : undefined;
+  return name === n ? undefined : literal(fixed.get(n.name)!);
+}
+
 function foldPass(src: string, seeds: Seed[], stats: FoldStats): string {
   const ast = parseJs(src);
-  const render = (n: AnyNode): string => {
+  const fixed = new Map(seeds.filter((s) => s.samples.length === 1).map((s) => [s.name, s.samples[0]!] as const));
+  const render = (n: AnyNode, parent?: AnyNode): string => {
+    const read = seedRead(n, parent, fixed);
+    if (read !== undefined) {
+      stats.predicatesFolded++;
+      return read;
+    }
     if (n.type === "IfStatement") {
       const t = opaqueValue(n.test, seeds);
       if (t) {
@@ -53,7 +66,7 @@ function foldPass(src: string, seeds: Seed[], stats: FoldStats): string {
     let pos = n.start;
     for (const k of kids(n)) {
       if (k.start < pos) continue; // shorthand properties share one range
-      out += src.slice(pos, k.start) + render(k);
+      out += src.slice(pos, k.start) + render(k, n);
       pos = k.end;
     }
     return out + src.slice(pos, n.end);
@@ -87,9 +100,32 @@ export interface FoldReport {
   files: { path: string; stats: FoldStats }[];
   /** Files left unfolded, with the reason. */
   notes: string[];
+  /** Two or more JS files carry the self-seal check: they hash each other's bytes at run time (BLA 3.2.1 and 3.5.9 samples), so any fold makes the build throw. Nothing is folded. A single sealed file folds and still runs (3.2.2 sample). shortcut: counts check text, does not prove the files hash each other. */
+  selfSealed: boolean;
+}
+
+const SEAL_MARKER = "integrity check failed";
+
+/** JS files under `src` (a file, folder or ASAR) that carry BLA's self-seal check. */
+function sealedFiles(src: string): number {
+  if (lstatSync(src).isSymbolicLink()) return 0;
+  if (statSync(src).isDirectory()) return readdirSync(src).reduce((n, e) => n + (e === "node_modules" ? 0 : sealedFiles(join(src, e))), 0);
+  if (extname(src) === ".asar") {
+    let asar: OpenAsar | undefined;
+    try {
+      asar = openAsar(src);
+      return asar.files.filter((f) => !f.node.unpacked && f.node.link === undefined && isJs(f.path) && !f.path.includes("node_modules/") && asar!.read(f).includes(SEAL_MARKER)).length;
+    } catch {
+      return 0;
+    } finally {
+      asar?.close();
+    }
+  }
+  return isJs(src) && readFileSync(src, "utf8").includes(SEAL_MARKER) ? 1 : 0;
 }
 
 function tryFold(label: string, code: string, flag: SeedFlag, rep: FoldReport): FoldResult | undefined {
+  if (rep.selfSealed) return undefined;
   try {
     return foldJs(code, flag);
   } catch (e) {
@@ -149,7 +185,8 @@ function foldTree(src: string, dst: string, flag: SeedFlag, rep: FoldReport): vo
 }
 
 export function foldPath(src: string, dst: string, flag: SeedFlag = 1): FoldReport {
-  const rep: FoldReport = { tool: "anti-bla/fold-js", files: [], notes: [] };
+  const rep: FoldReport = { tool: "anti-bla/fold-js", files: [], notes: [], selfSealed: sealedFiles(src) >= 2 };
+  if (rep.selfSealed) rep.notes.push(`${src}: self-sealed build, not folded (the seal hashes the file bytes at run time)`);
   foldTree(src, dst, flag, rep);
   return rep;
 }

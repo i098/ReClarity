@@ -71,18 +71,21 @@ const PYC_DECOY_NAME = new RegExp(`(?:${PYC_STEMS.join("|")})_[1-9][0-9]{3}`, "g
 /** Distinct decoy-shaped names in raw .pyc text: one name shows up several times (code name, qualname, name table), so count it once. */
 export const pycDecoyNames = (text: string): Set<string> => new Set(text.match(PYC_DECOY_NAME));
 
-const HEX_LOW = /_[0-9a-f]{4}$/;
-const HEX_UP = /_[0-9A-F]{4}$/;
+// 3.2.x ends names in 4 hex digits; 3.5.x in 4 base-36 characters.
+const HEX_LOW = /_[0-9a-z]{4}$/;
+const HEX_UP = /_[0-9A-Z]{4}$/;
 const SAFE_BUILTINS = new Set(["range", "ord", "len", "bytearray", "int", "max", "hash", "enumerate", "Exception"]);
 const SAFE_ATTRS = new Set(["get", "__name__", "from_bytes"]);
-const HONEY_VARS = new Set(["CANARY_TOKENS", "AMBIGUOUS_TRANSPORT", "CONFLICTING_QUERY", "SYSTEM_DIAGNOSTICS", "ALIGNMENT_EVAL_CANARY_GUID", "COGNITIVE_ARMOR_CORPUS"]);
-const HONEY_DEF = "probe_canary_honeypot";
 export const STATE_RE = /^(\w+) = 0x[0-9a-f]+ \| 1$/;
-export const SLOT_RE = /^(\w+): dict = \{"epoch": 0, "peer": 0, "tag": 0\}$/;
+export const SLOT_RE = /^(\w+)(?:: dict)? = \{"epoch": 0, "peer": 0, "tag": 0\}$/;
 const MANIFEST_RE = /^(\w+) = \(\s*(?:"(?:[^"\\\n]|\\.)*",\s*)*\)$/;
 const CALL_RE = /^(\w+)\((\w+) & 0xFF\)$/;
-const HONEY_CALL_RE = /^_ = probe_canary_honeypot\(0\)$/;
-const SLOT_TOUCH_RE = /^\s*(\w+)\["epoch"\] = \(\1\.get\("epoch", 0\) \^ hash\((\w+)\.__name__\)\) & 0xFFFFFFFF\s*$/;
+const HONEY_CALL_RE = /^(?:_ = )?(\w+)\(0\)$/;
+const BUILTINS_IMPORT_RE = /^import builtins as (\w+)$/;
+// 3.5.x prefixes the honeypot names: `_<words>_<4>_CANARY_TOKENS`, `_<words>_probe_canary_honeypot_<4>`.
+const HONEY_VAR_RE = /^(?:_[A-Z0-9_]+_[A-Z0-9]{4}_)?(?:CANARY_TOKENS|AMBIGUOUS_TRANSPORT|CONFLICTING_QUERY|SYSTEM_DIAGNOSTICS|ALIGNMENT_EVAL_CANARY_GUID|COGNITIVE_ARMOR_CORPUS)$/;
+const HONEY_DEF_RE = /^(?:_\w+_)?probe_canary_honeypot(?:_[0-9a-z]{4})?$/;
+const SLOT_TOUCH_RE = /^\s*(\w+)\["epoch"\] = \(\1\.get\("epoch", 0\) \^ (?:\w+\.)?hash\((\w+)\.__name__\)\) & 0xFFFFFFFF\s*$/;
 const OPAQUE_IF_RE = /^\s*if \(\(\(7 \* \(\((\w+) \| (\d+)\) \*\* 2\) - 1\) & 0xFFFFFFFF\) == \(\(\(\1 \^ (\d+)\) \*\* 2\) & 0xFFFFFFFF\) and \(\(\1 \* \(\1 \+ 1\)\) & 1\) == 1\):\s*$/;
 const WEAVE_CALL_RE = /^\s*_ = (\w+)\(\d+, 0\)(?: \^ (\w+)\(\d+, 0\))?\s*$/;
 const BLA_COMMENT_RE = /^# (?:runtime attestation boundary|--- canary credential \/ transport-redaction honeypot \(inert\) ---|--- system-diagnostic rabbit holes & cognitive-armor interlocks \(inert\) ---)$/;
@@ -128,6 +131,8 @@ interface Prep extends Tarpit {
 function findMembers(lines: string[], stmts: PyStmtFacts[]): Tarpit {
   const text = (s: PyStmtFacts): string => lines.slice(s.start - 1, s.end).join("\n");
   const sig = (s: PyStmtFacts, want: string): boolean => s.kind === "FunctionDef" && !s.decorated && !s.impure && s.params !== null && JSON.stringify(s.params) === want;
+  // 3.5.x: `import builtins as _x`, then `_x.range(...)` for every builtin the tarpit uses
+  const aliases = new Set(stmts.flatMap((s) => (s.kind === "Import" ? [BUILTINS_IMPORT_RE.exec(text(s))?.[1] ?? ""] : [])).filter(Boolean));
   const cand: Member[] = [];
   const decoys = new Set<string>();
   const slots = new Set<string>();
@@ -160,7 +165,7 @@ function findMembers(lines: string[], stmts: PyStmtFacts[]): Tarpit {
   // a def that names anything else, or does anything else, is real code: it stays
   const members = cand.filter((m) => {
     const s = stmts[m.index]!;
-    return s.kind !== "FunctionDef" || (s.free.every((n) => all.has(n) || SAFE_BUILTINS.has(n)) && s.attrs.every((a) => SAFE_ATTRS.has(a)));
+    return s.kind !== "FunctionDef" || (s.free.every((n) => all.has(n) || SAFE_BUILTINS.has(n) || aliases.has(n)) && s.attrs.every((a) => SAFE_ATTRS.has(a) || (aliases.size > 0 && SAFE_BUILTINS.has(a))));
   });
   const defs = new Set(members.map((m) => m.defines));
   stmts.forEach((s, index) => {
@@ -171,13 +176,20 @@ function findMembers(lines: string[], stmts: PyStmtFacts[]): Tarpit {
   for (const w of warm) if (defs.has(w)) decoys.add(w);
 
   // honeypot block: literals only, three or more together, plus BLA's tiny probe def and its call
-  const honey = stmts.flatMap((s, index) => (s.kind === "Assign" && s.targets.length === 1 && HONEY_VARS.has(s.targets[0]!) && !s.impure && s.free.length === 0 ? [{ index, defines: s.targets[0]! }] : []));
+  const honey = stmts.flatMap((s, index) => (s.kind === "Assign" && s.targets.length === 1 && HONEY_VAR_RE.test(s.targets[0]!) && !s.impure && s.free.length === 0 ? [{ index, defines: s.targets[0]! }] : []));
   if (honey.length >= 3) {
-    const names = new Set([...honey.map((h) => h.defines), HONEY_DEF]);
+    const names = new Set(honey.map((h) => h.defines));
     members.push(...honey);
+    let honeyDef = "";
     stmts.forEach((s, index) => {
-      if (s.kind === "FunctionDef" && s.name === HONEY_DEF && !s.decorated && !s.impure && s.free.every((n) => names.has(n) || n === "len") && s.attrs.length === 0) members.push({ index, defines: HONEY_DEF });
-      else if (s.kind === "Assign" && HONEY_CALL_RE.test(text(s))) members.push({ index, defines: "", callee: HONEY_DEF });
+      if (s.kind === "FunctionDef" && HONEY_DEF_RE.test(s.name ?? "") && !s.decorated && !s.impure && s.free.every((n) => names.has(n) || n === "len" || aliases.has(n)) && s.attrs.every((a) => aliases.size > 0 && a === "len")) {
+        honeyDef = s.name!;
+        members.push({ index, defines: honeyDef });
+      }
+    });
+    stmts.forEach((s, index) => {
+      const m = (s.kind === "Assign" || s.kind === "Expr") && honeyDef ? HONEY_CALL_RE.exec(text(s)) : null;
+      if (m && m[1] === honeyDef) members.push({ index, defines: "", callee: honeyDef });
     });
   }
   return { members, decoys, slots, states };

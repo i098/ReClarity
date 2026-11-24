@@ -341,6 +341,22 @@ describe("fold-js keeps shadow-runtime look-alikes that the program can observe"
   });
 });
 
+test("BLA 3.5.x digest seed: a literal-only seed is one fixed number, its predicates fold", () => {
+  const src = [
+    "function _d(x = 0) { return 7; }",
+    "var st = { cells: new Uint32Array([6, 9]) };",
+    "const D = _d(0);",
+    "const S = 1000 ^ (st.cells[0] ^ st.cells[1]) | (_d.length >= 0 && D === 7 ? 1 : 0);",
+    "const out = (S >>> 4 & 1) === 0 ? 'a' : 'b';",
+    "module.exports = out;",
+  ].join("\n");
+  const r = foldJs(src);
+  expect(r.stats.predicatesFolded).toBeGreaterThan(0);
+  expect(r.code).not.toContain("S >>> 4");
+  const run = (c: string) => { const m = { exports: "" as unknown }; new Function("module", c)(m); return m.exports; };
+  expect(run(r.code)).toBe(run(src));
+});
+
 test("foldPath leaves a build unchanged when two files carry the self-seal check", () => {
   const d = join(tmp, "sealed");
   mkdirSync(d, { recursive: true });

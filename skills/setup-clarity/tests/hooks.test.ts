@@ -150,6 +150,9 @@ describe("install", () => {
     expect(s.model).toBe("x");
     expect(s.hooks.PreToolUse.map((e: any) => e.hooks[0].command)).toEqual(["mine.sh", 'bun "$CLAUDE_PROJECT_DIR/.claude/hooks/reclarity/guard.ts"']);
     expect(s.hooks.PostToolUse).toHaveLength(1);
+    // a REA run that hits a limit exits non-zero: Claude Code reports that as PostToolUseFailure
+    expect(s.hooks.PostToolUseFailure).toHaveLength(1);
+    expect(s.hooks.PostToolUseFailure[0].hooks[0].command).toContain("fence.ts");
     expect(s.hooks.SessionStart).toHaveLength(1);
     expect(json(join(p, ".claude/hooks/reclarity/config.json")).targets).toEqual(["dist"]);
   });

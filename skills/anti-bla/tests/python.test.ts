@@ -154,6 +154,24 @@ sys.exit(leaked)
   });
 });
 
+describe.skipIf(!sandboxWorks)("BLA 3.5.9 Python tarpit", () => {
+  // fixtures/engine.bla359.py: `bla protect` 3.5.9 output; names end in 4 base-36 characters, the shared slot has no annotation, builtins go through an alias.
+  const probe = (f: string): string => {
+    const code = `import importlib.util as u,sys,json;s=u.spec_from_file_location("e",sys.argv[1]);m=u.module_from_spec(s);s.loader.exec_module(m);c=m.Cart("DE").add("a",2,3.5);print(json.dumps([m.quote(1000,250,3),m.classify(5),c.total,m.licence("TRIAL"),m.parse("555-1234")]))`;
+    return Bun.spawnSync(["python3", "-c", code, f], { stdout: "pipe" }).stdout.toString();
+  };
+  test("scan flags it as newer than the pin; --coverage cleans it and the program answers the same", () => {
+    const app = pyDir("prep359", { "main.py": readFileSync(join(FIXTURES, "engine.bla359.py")) });
+    expect(scan(app).notes.join(" ")).toContain("newer than BLA");
+    const work = join(tmp, "prep359-work");
+    mkdirSync(work);
+    const prepared = prepare(app, work, "a", true);
+    expect(scan(prepared).score).toBe(0);
+    expect(readFileSync(join(prepared, "main.py")).length).toBeLessThan(2000);
+    expect(probe(join(prepared, "main.py"))).toBe(probe(join(app, "main.py")));
+  });
+});
+
 describe.skipIf(!sandboxWorks)(".pyc decoys", () => {
   const versions = PYC_VERSIONS.filter((v) => pythonForMagic(pycMagic(readFixture(`ledger.py${v}.pyc`))!));
 

@@ -100,10 +100,22 @@ function selfContained(n: AnyNode | null | undefined): boolean {
 
 interface Decl {
   name: string; // "" for keep-alive statements
+  /** A statement that only sets `.name` of this function: it goes when the function goes. */
+  boundTo?: string;
   node: AnyNode;
   uses: string[];
   isFn: boolean;
   isState: boolean;
+}
+
+/** `Object.defineProperty(F, "name", { value: "lit", configurable: true })`: the function it names, if so. */
+function nameBinding(st: AnyNode): string | undefined {
+  if (st.type !== "ExpressionStatement" || st.expression.type !== "CallExpression") return undefined;
+  const { callee: c, arguments: [f, key, desc] } = st.expression;
+  if (c.type !== "MemberExpression" || c.computed || c.object.type !== "Identifier" || c.object.name !== "Object" || c.property.type !== "Identifier" || c.property.name !== "defineProperty") return undefined;
+  if (f?.type !== "Identifier" || key?.type !== "Literal" || key.value !== "name" || desc?.type !== "ObjectExpression" || st.expression.arguments.length !== 3) return undefined;
+  const lit = (v: AnyNode) => v.type === "Literal" && (typeof v.value === "string" || typeof v.value === "boolean");
+  return desc.properties.every((p) => p.type === "Property" && !p.computed && p.key.type === "Identifier" && ["value", "configurable"].includes(p.key.name) && lit(p.value)) ? f.name : undefined;
 }
 
 export const isKeepAlive = (st: AnyNode): boolean =>
@@ -115,9 +127,12 @@ export const isKeepAlive = (st: AnyNode): boolean =>
 function classify(ast: Program, seedNames: string[]): { decls: Decl[]; roots: AnyNode[] } {
   const decls: Decl[] = [];
   const roots: AnyNode[] = [];
+  const rebound = reboundNames(ast);
+  const fnNames = new Set(ast.body.flatMap((st) => (st.type === "FunctionDeclaration" && st.id && !rebound.has(st.id.name) ? [st.id.name] : [])));
   for (const st of ast.body) {
     const one = st.type === "VariableDeclaration" && st.declarations.length === 1 ? st.declarations[0]! : undefined;
     if (isKeepAlive(st)) decls.push({ name: "", node: st, uses: [], isFn: false, isState: false });
+    else if (nameBinding(st) && fnNames.has(nameBinding(st)!)) decls.push({ name: "", boundTo: nameBinding(st), node: st, uses: [], isFn: false, isState: false });
     else if (st.type === "FunctionDeclaration" && st.id) decls.push({ name: st.id.name, node: st, uses: uses(st), isFn: true, isState: false });
     else if (st.type === "ClassDeclaration" && st.id) decls.push({ name: st.id.name, node: st, uses: uses(st), isFn: false, isState: false });
     else if (one && one.id.type === "Identifier" && seedNames.includes(one.id.name)) decls.push({ name: one.id.name, node: st, uses: uses(st), isFn: false, isState: false });
@@ -421,7 +436,7 @@ function unreachedCuts(code: string, seedNames: string[]): [number, number][] {
       if (d) queue.push(d.uses);
     }
   }
-  return decls.filter((d) => !live.has(d.name)).map((d) => [d.node.start, d.node.end]);
+  return decls.filter((d) => !live.has(d.boundTo ?? d.name)).map((d) => [d.node.start, d.node.end]);
 }
 
 /** ESM, or CommonJS (uses require/module/exports). Top-level declarations of a classic script are globals other code may reach. */

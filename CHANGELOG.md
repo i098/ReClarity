@@ -10,6 +10,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and u
 - `fold-js.ts` leaves a build unfolded when two or more JS files carry the `--self-seal` check (any fold made it throw) and reports `selfSealed`.
 - `scan.ts` notes when a build uses shapes newer than the pinned BLA 3.2.2.
 - `setup-clarity` installer registers `fence.ts` for `PostToolUseFailure`: a REA run that hits a capacity limit exits non-zero, so the fence never saw it.
+- Live Claude Code check of the auto-trigger, with hook logs and a transcript in `docs/proof/`.
 - `docs/benchmark/`: side-by-side harness (plain, LASIK, ReClarity) with raw results.
 - `untrusted-repo-read` skill: `isolate.ts` writes a view copy where planted instructions in comment and doc spans become markers, plus `isolation.json`.
 - `scan.ts` and `sanitize.ts` cover BLA 3.2.2 formats: DEX, IL2CPP, .NET, ZIP, APK, Bun sidecar and native headers.

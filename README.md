@@ -76,7 +76,7 @@ Limits: one run per cell; five seeds; one host under heavy load; one release per
 
 ## Auto-trigger
 
-REA stops with exit code 1 when a build crosses a limit. Claude Code sends a failed tool call as `PostToolUseFailure`, not `PostToolUse`. The installer registered the fence hook only for `PostToolUse`, so the capacity route never ran in that case. `setup-clarity/hooks/install.ts` now registers `fence.ts` for both. Checked: the installer test asserts the `PostToolUseFailure` entry, and a `fence.ts` test feeds a `PostToolUseFailure` event with REA's ASAR error text and asserts the `run.ts` instruction. Not yet checked: a fresh Claude Code session on a real install; this host has no Claude Code, and omp does not read `.claude/settings.json` hooks. The issue stays open until that run is recorded.
+See the [live auto-trigger check](docs/auto-trigger.md#live-check-2026-11-25) for the failed REA call and the Claude Code hook response.
 
 ## What it does
 
@@ -120,7 +120,7 @@ bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-jav
 - [What it does and skills](docs/skills.md): the three skills and when to use each.
 - [End-to-end recording](docs/e2e-recording.md): A/B run with a recording.
 - [Measured comparison](docs/measured-comparison.md): plain REA, LASIK and ReClarity on BLA-hardened builds.
-- [Auto-trigger](docs/auto-trigger.md): why the fence hook missed failed calls.
+- [Auto-trigger](docs/auto-trigger.md): why the fence hook missed failed calls, and the live check.
 
 ## Contribute
 

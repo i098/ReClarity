@@ -28,7 +28,7 @@ Click the card to play the 4 min recording (`media/reclarity-e2e-v3.mp4`). All A
 
 - A, plain REA, cap override forbidden: stops at the 16 MiB ASAR limit. 0 of 3 answers.
 - B, REA + ReClarity (agent told to use it): 3 of 3 answers correct.
-- Auto-trigger does not work yet. With ReClarity installed but not mentioned, the agent raised the cap itself and had no answer after 15 min.
+- See the [recording notes](e2e-recording.md) for the auto-trigger result.
 - BLA hardening ran as a plain script. Opus 5.5 refused that prompt.
 - Limits: one run each, one model, one BLA seed (`e2e-1`). The build is an ASAR of JS tooling, not a native app.
 
@@ -262,5 +262,5 @@ Limits that stay:
 
 - The shapes in `references/signatures.md` are pinned to BLA 3.2.2 (commit `38d26d5`). The predicate and seed templates are the same as in 3.1.0. Before this change, `scan.ts` missed most of the opaque predicates: the `--self-seal` seed (in 3.1.0 too) and the tarpit's `flag && P` tests. On 48 real 3.2.2 builds (3 seeds, 4 intensities, with and without all flags), it now counts every emitted predicate (`tests/shapes322.test.ts`). 3.2.2 adds two fixed JS names, `_blaLocalMath*` and the `bla_encrypt_strings` stub's `var _blaS=`, reported as `js_bla_name`.
 - `sanitize.ts` does not remove directive text. `fold-js.ts` drops it only when it sits in decoy code that the fold prunes, as in `app.bla-llm.js` and `app.bla-all.js`. Directive text that stays is data: the fence and `asData` are the answer, not deletion. BLA may change its wording, and the text may sit in code that runs.
-- The hooks were run as scripts with the JSON the three harness docs describe. They were not run inside a live Claude Code, Codex or Gemini session. No agent (Claude/Codex) was run on this evidence.
+- These format coverage runs invoked the hooks as scripts with the JSON from the three harness docs. They did not use a live agent session. See [Auto-trigger](auto-trigger.md) for the separate Claude Code check.
 - `guard.ts` reads command text only. A path built at run time passes.

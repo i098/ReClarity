@@ -10,17 +10,42 @@ ReClarity is an **anti-BLA** skill and toolkit. [BLA](https://github.com/qybaihe
 ## Install
 
 ```bash
-npx skills add i098/ReClarity --skill anti-bla
-npx skills add i098/ReClarity --skill setup-clarity   # then: bun <skill>/hooks/install.ts --target dist
+npx skills add i098/ReClarity --skill anti-bla --skill setup-clarity -a claude-code -y
+(cd .claude/skills/anti-bla && bun install)
+bun .claude/skills/setup-clarity/hooks/install.ts --target app.asar
 ```
 
-Needs [Bun](https://bun.sh) and, for coverage, `bwrap`. Details: [docs/usage.md](docs/usage.md).
+Needs [Bun](https://bun.sh) and, for coverage, `bwrap`. Replace `app.asar` with your build. The last command adds the hooks to `.claude/settings.json`. Details: [docs/usage.md](docs/usage.md).
 
 ## Run
 
 ```bash
-bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-javascript-application {target}"
+bun .claude/skills/anti-bla/scripts/run.ts <target> --work .reclarity/work --rea "rea analyze-javascript-application {target}"
 ```
+
+From a clone of this repository, use `skills/anti-bla/scripts/run.ts`.
+
+## Auto-trigger: REA fails, the hook gives the fix
+
+After the hooks are installed, you do not need to name ReClarity. When REA fails on a capacity limit, the `fence` hook gives the agent the complete `run.ts` command. The agent runs it.
+
+```mermaid
+flowchart LR
+    A[Agent runs REA on the build] --> B{REA fails on a<br/>capacity limit?}
+    B -- no --> Z[Result is real]
+    B -- yes --> C[fence hook reads<br/>PostToolUseFailure]
+    C --> D[Hook prints the full<br/>run.ts command]
+    D --> E[Agent runs run.ts]
+    E --> F[run.ts scans, cleans a copy,<br/>runs REA on the copy]
+    F --> G[REA exits 0, agent answers]
+```
+
+1. Install as in [Install](#install).
+2. Start Claude Code in the project and ask: `Use REA (rea analyze-javascript-application app.asar) to analyze this app and tell me what it does.`
+3. REA fails with `ASAR header/index admission is limited to 16 MiB`. The hook adds the `run.ts` command to the agent context.
+4. The agent runs `run.ts`. REA runs on the cleaned copy.
+
+Recorded check (2026-11-25): 1 session, a BLA-hardened ASAR with a 22 MB header, Claude Code and Sonnet 5.5. REA failed, the hook gave the command, REA ran on the cleaned copy and exited 0 in 65 s. The agent gave a correct answer. Limits: one model, one sample; see [docs/auto-trigger.md](docs/auto-trigger.md). Proof files: [recording](docs/proof/autotrigger-e2e.cast) (`asciinema play`), [hook log](docs/proof/autotrigger-e2e-hooks.jsonl), [transcript](docs/proof/autotrigger-e2e-transcript.txt).
 
 ## BLA de-obfuscation: what it does
 
@@ -53,9 +78,11 @@ One run per cell, no agent run; plain REA, method and limits are in [docs/measur
 
 ## End-to-end recording
 
-[![ReClarity e2e v3 recording, 6x speed preview](docs/media/reclarity-e2e-v3-preview.gif)](docs/media/reclarity-e2e-v3.mp4)
+https://github.com/user-attachments/assets/903bf115-3d72-4181-9e47-de52aae9f505
 
-Plain REA stopped at the ASAR limit with 0 of 3 answers. REA with ReClarity gave 3 of 3 correct answers. One run each, one model (Claude Opus 5.5). Auto-trigger did not work in this recording; see [docs/e2e-recording.md](docs/e2e-recording.md) and [docs/auto-trigger.md](docs/auto-trigger.md).
+The video plays the [terminal recording](docs/proof/autotrigger-e2e.cast) of the auto-trigger check above at 4x speed. Use the player controls to scrub.
+
+An older recording (Claude Opus 5.5, one run each) compared plain REA, which stopped at the ASAR limit with 0 of 3 answers, with REA plus ReClarity, which gave 3 of 3 correct answers. See [docs/e2e-recording.md](docs/e2e-recording.md) ([mp4](docs/media/reclarity-e2e-v3.mp4)).
 
 ## Docs
 
@@ -65,7 +92,7 @@ Plain REA stopped at the ASAR limit with 0 of 3 answers. REA with ReClarity gave
 - [Measured comparison](docs/measured-comparison.md): plain REA, LASIK and ReClarity.
 - [Risks](docs/risks.md): what ReClarity refuses and why.
 - [Architecture](docs/architecture.md): flow and tools.
-- [Auto-trigger](docs/auto-trigger.md): why the fence hook missed failed calls, and the live check.
+- [Auto-trigger](docs/auto-trigger.md): how the hook gives the command after a failed REA call, and the recorded checks.
 - [Install and run](docs/install.md), [skills](docs/skills.md), [end-to-end recording](docs/e2e-recording.md).
 
 ## Contribute

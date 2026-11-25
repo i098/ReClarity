@@ -6,6 +6,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and u
 
 ### Fixed
 
+- ASAR flood: when the header is over 16 MiB, `scan.ts` and `sanitize.ts` treat tiny entries (256 B or less) with repeated bytes (100 or more) as flood, and the cleaned copy drops them (refs #40). On the 21.6 MB sample the copy header went from 21662601 B to 12 B and REA finished (exit 0, verdict `ok`, 87 s); before, REA ran past the 1801 s cap. `run.ts` reports the dropped count in its notes.
 - `fence.ts` capacity hint is a complete `run.ts` command with `--work` and `--rea`, rebuilt from the failed `rea` call when it names a configured target (refs #38). One live Claude Code session ran it; REA failed on the cleaned copy because the 21.6 MB ASAR header stays above 16 MiB.
 - `run.ts` runs REA with the `REA_ASAR_MAX_HEADER_BYTES` that `sanitize.ts` computes, and `isReaCapacityError` reads REA's text error on stdout. Before, REA's ASAR header error (text, on stdout) was not a capacity error. On the 21.6 MB sample REA then passed the header limit and did not finish in the 30 min cap. See `docs/auto-trigger.md`.
 

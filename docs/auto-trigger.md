@@ -58,3 +58,24 @@ Limits:
 - The placeholder form is also what the agent gets when the failed command is not a plain `rea` command or does not name a configured target.
 - This check used one model and one archive, and the session stopped at the 300 s limit.
 - omp does not read `.claude/settings.json` hooks, so this check covers Claude Code only.
+
+## ASAR flood cut (2026-11-25, refs #40)
+
+The sample has 90000 entries of 1 byte with short paths (`d0/f0.js`), so the old rule (path of 200+ chars) found none, and the cleaned copy kept the 21.6 MB header.
+Now, when the header is over 16 MiB, `scan.ts` and `sanitize.ts` also count tiny entries (256 B or less) whose bytes repeat 100 times or more as flood.
+`sanitize.ts` drops them and writes a new header. All other entries stay byte-identical (unit test).
+`REA_ASAR_MAX_HEADER_BYTES` is set only if the cleaned header is still over 16 MiB. `run.ts` adds the dropped count to the run notes.
+
+Measured with real REA, `bun run.ts app.asar --work w --rea 'rea analyze-javascript-application {target}'`:
+
+| | Before (header kept, limit raised) | After |
+|---|---|---|
+| Header of the copy | 21662601 B | 12 B |
+| `REA_ASAR_MAX_HEADER_BYTES` | 22 MiB | not set |
+| Wall time | killed at the 1801 s cap | 87 s, then 75 s (second run) |
+| REA exit code | null (killed) | 0 |
+| Verdict | `rea-failed` | `ok` |
+
+Note: `90000 entries dropped, header 21662601 B -> 12 B`. The sample has no real file, so REA found 0 sources.
+New Claude Code session (b420fc95-7e72-4bdb-891c-b467a86f148e, first message does not name ReClarity): the agent ran `run.ts` and REA finished; see the [transcript](proof/asar-flood-cleaned-transcript.txt). One session, one sample.
+

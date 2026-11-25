@@ -55,7 +55,9 @@ export function prepare(target: string, work: string, tag: string, withCoverage:
   const src = realpathSync(target);
   for (const d of [`${tag}-san`, `${tag}-clean`, `${tag}-quarantine`, `${tag}-quarantine.quarantine.json`]) rmSync(join(work, d), { recursive: true, force: true });
   const san = join(work, `${tag}-san`);
-  Object.assign(reaEnv, sanitize(src, san).reaEnv);
+  const cleaned = sanitize(src, san);
+  Object.assign(reaEnv, cleaned.reaEnv);
+  for (const a of cleaned.actions) if (a.kind === "asar-flood-dropped") notes.push(`${a.path}: ${a.detail}`);
   const isDir = statSync(src).isDirectory();
   const sanitized = isDir ? san : join(san, basename(src));
   const folded = join(work, `${tag}-clean`, isDir ? "" : basename(src));

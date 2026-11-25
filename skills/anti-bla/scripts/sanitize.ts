@@ -16,7 +16,7 @@ import { cleanPcap } from "./lib/pcap.ts";
 import { cleanPyc, extractBundle, isPyInstaller } from "./lib/pybox.ts";
 import { pycDecoyNames } from "./lib/pytarpit.ts";
 import { dropHoney, isSqlite } from "./lib/sqlite.ts";
-import { BAIT, CONFIG_NAMES, FLOOD_MIN, MAX_BIN, REA_ASAR_DEFAULT_HEADER, isFloodEntry } from "./scan.ts";
+import { BAIT, CONFIG_NAMES, FLOOD_MIN, MAX_BIN, REA_ASAR_DEFAULT_HEADER, floodEntries } from "./scan.ts";
 import { cleanBeam } from "./lib/beam.ts";
 import { REA_MAX_RUSTC_HASHES, goBuildInfos, isGoFlood, rustcPaths, trailerStart } from "./lib/native.ts";
 import { cleanWasm } from "./lib/wasm.ts";
@@ -48,12 +48,13 @@ function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
   let asar: OpenAsar | undefined;
   try {
     const open = (asar = openAsar(src));
-    const flood = open.files.filter(isFloodEntry);
-    if (open.headerBytes > REA_ASAR_DEFAULT_HEADER) {
-      const need = Math.ceil(open.headerBytes / MIB) * MIB;
-      if (need <= REA_ASAR_MAX) r.reaEnv.REA_ASAR_MAX_HEADER_BYTES = String(need);
-    }
+    const flood = floodEntries(open.files, open.headerBytes);
+    const raise = (header: number) => {
+      const need = Math.ceil(header / MIB) * MIB;
+      if (header > REA_ASAR_DEFAULT_HEADER && need <= REA_ASAR_MAX) r.reaEnv.REA_ASAR_MAX_HEADER_BYTES = String(need);
+    };
     if (flood.length < FLOOD_MIN) {
+      raise(open.headerBytes);
       copyFileSync(src, dst);
       r.actions.push({ kind: "copied-asar-unchanged", path: src });
       return;
@@ -62,6 +63,7 @@ function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
     const kept = open.files.filter((f) => !drop.has(f));
     const packed = buildAsar(kept.map((f) => ({ path: f.path, node: f.node, data: f.node.unpacked || f.node.link !== undefined ? undefined : open.read(f) })));
     writeFileSync(dst, packed);
+    raise(packed.readUInt32LE(12));
     r.actions.push({ kind: "asar-flood-dropped", path: src, detail: `${flood.length} entries dropped, header ${open.headerBytes} B -> ${packed.readUInt32LE(12)} B` });
     for (const f of kept) if (SUSPECT.test(f.path) && !r.suspects.includes(f.path)) r.suspects.push(f.path);
   } catch (e) {

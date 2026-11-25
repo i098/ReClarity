@@ -63,9 +63,9 @@ Limits:
 
 The sample has 90000 entries of 1 byte with short paths (`d0/f0.js`), so the old rule (path of 200+ chars) found none, and the cleaned copy kept the 21.6 MB header.
 Now, when the header is over 16 MiB, `scan.ts` and `sanitize.ts` also count tiny entries (256 B or less) with the same size and the same content (read from the archive, not from `integrity` or offset; empty files group by size 0) 100 times or more as flood.
-Limit: the rule ignores the path, so 100 or more identical tiny real files (empty files, stubs) in such an archive are dropped too. The run note names each repeated group: count, size and first 3 paths.
+Limit: the rule applies only when the header is over 16 MiB and ignores the path, so 100 or more identical tiny real files (empty files, stubs) in such an archive are dropped too. The run note names each repeated group: count, size and first 3 paths.
 `sanitize.ts` drops them and writes a new header. All other entries stay byte-identical (unit test).
-`REA_ASAR_MAX_HEADER_BYTES` is set only if the cleaned header is still over 16 MiB. `run.ts` adds the dropped count to the run notes.
+`REA_ASAR_MAX_HEADER_BYTES` is set only if the cleaned header is still over 16 MiB. `run.ts` adds the dropped-group note (above) to the run notes.
 
 Measured with real REA, `bun run.ts app.asar --work w --rea 'rea analyze-javascript-application {target}'`:
 
@@ -91,5 +91,3 @@ Second measured run, an ASAR with a real small JS app (`dist/main.js` and `packa
 | REA wall time, exit, verdict | 74 s, 0, `ok` |
 | REA input | "Processing 2 selected application files": `dist/main.js` and `package.json` |
 | Real files in the cleaned copy | `dist/main.js`, `package.json`, byte-identical to the original (compared by read-back) |
-
-Limit of the rule: it applies only when the header is over 16 MiB. Then real files of 256 B or less with 100 or more identical copies (same bytes, same size) are dropped too.

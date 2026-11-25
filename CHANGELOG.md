@@ -4,6 +4,11 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and u
 
 ## [Unreleased]
 
+### Fixed
+
+- `fence.ts` capacity hint is a complete `run.ts` command with `--work` and `--rea`, rebuilt from the failed `rea` call when it names a configured target (refs #38). One live Claude Code session ran it; REA failed on the cleaned copy because the 21.6 MB ASAR header stays above 16 MiB.
+- `run.ts` runs REA with the `REA_ASAR_MAX_HEADER_BYTES` that `sanitize.ts` computes, and `isReaCapacityError` reads REA's text error on stdout. Before, REA's ASAR header error (text, on stdout) was not a capacity error. On the 21.6 MB sample REA then passed the header limit and did not finish in the 30 min cap. See `docs/auto-trigger.md`.
+
 ### Added
 
 - BLA 3.5.x: `fold-js.ts` folds the digest seed (`const S = L | (F.length >= 0 && D === K ? 1 : 0)`) and its alias, and prunes the dead bindings; coverage cleaning removes the 3.5.x Python tarpit (base-36 name suffix, unannotated shared slot, builtins alias, prefixed honeypot names). On 3.5.9 samples `fold-js.ts` folded nothing before.

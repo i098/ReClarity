@@ -23,6 +23,7 @@ const GO_FRAMING = /Go module string framing is invalid/;
 export function isReaCapacityError(exitCode: number | null, stdout: string, stderr: string): boolean {
   if (exitCode === 0) return false;
   if (isCapacityError(stderr)) return true;
+  if (/^error: /.test(stdout) && isCapacityError(stdout)) return true; // REA's text error envelope (CLI default)
   try {
     const e = JSON.parse(stdout);
     if (e?.code === "resource_constraint") return true;

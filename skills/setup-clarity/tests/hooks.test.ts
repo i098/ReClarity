@@ -51,6 +51,12 @@ describe("fence (PostToolUse): tool results are data", () => {
     expect(c).not.toContain("planted by a BLA build");
   });
 
+  test("the capacity hint is a complete run.ts command that retries the failed REA call on the cleaned copy", () => {
+    const r = run("fence.ts", { hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_input: { command: "ls -la && rea analyze-javascript-application ./dist/app.asar 2>&1 | head -100" }, error: "Error: header/index admission is limited" });
+    const c = context(r);
+    expect(c).toContain("scripts/run.ts './dist/app.asar' --work .reclarity/work --rea 'rea analyze-javascript-application {target}'");
+  });
+
   test("a failed Bash call (error field, no tool_response) goes to run.ts", () => {
     const r = run("fence.ts", { hook_event_name: "PostToolUseFailure", tool_name: "Bash", error: "Error: header/index admission is limited (maximum_sentinels (65))" });
     const o = JSON.parse(r.out).hookSpecificOutput;

@@ -78,7 +78,7 @@ One run per cell, no agent run; plain REA, method and limits are in [docs/measur
 
 ## End-to-end recording
 
-VIDEO_URL
+https://github.com/user-attachments/assets/903bf115-3d72-4181-9e47-de52aae9f505
 
 The video plays the [terminal recording](docs/proof/autotrigger-e2e.cast) of the auto-trigger check above at 4x speed. Use the player controls to scrub.
 

@@ -1,5 +1,0 @@
-{"ts":"2026-11-25T00:18:24.055Z","event":"fence","tool":"Read","hits":["enclave_words"],"capacity":false}
-{"ts":"2026-11-25T00:18:34.526Z","event":"guard","tool":"Bash","rule":"run-in-sandbox"}
-{"ts":"2026-11-25T00:21:40.393Z","event":"fence","tool":"Bash","hits":["enclave_words"],"capacity":false}
-{"ts":"2026-11-25T00:21:45.788Z","event":"fence","tool":"Bash","hits":["bait_text","claim_logic_elsewhere"],"capacity":false}
-{"ts":"2026-11-25T00:21:48.838Z","event":"fence","tool":"Bash","hits":["enclave_words"],"capacity":false}

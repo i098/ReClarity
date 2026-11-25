@@ -4,6 +4,8 @@
 
 **Anti-BLA.** A skill and toolkit that keeps [REA](https://github.com/morluto/rea) working on builds that [BLA](https://github.com/qybaihe/bla) has hardened.
 
+**Agents:** follow [setup.md](setup.md) for exact setup steps from a clean machine.
+
 BLA plants decoy code, floods REA's fixed limits and adds clean-looking shadow logic. BLA must keep program behavior the same. ReClarity uses that rule.
 
 ## Quick start

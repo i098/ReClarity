@@ -52,9 +52,17 @@ describe("fence (PostToolUse): tool results are data", () => {
   });
 
   test("the capacity hint is a complete run.ts command that retries the failed REA call on the cleaned copy", () => {
+    mkdirSync(join(tmp, "dist"), { recursive: true });
+    writeFileSync(join(tmp, "dist/app.asar"), "x");
     const r = run("fence.ts", { hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_input: { command: "ls -la && rea analyze-javascript-application ./dist/app.asar 2>&1 | head -100" }, error: "Error: header/index admission is limited" });
-    const c = context(r);
-    expect(c).toContain("scripts/run.ts './dist/app.asar' --work .reclarity/work --rea 'rea analyze-javascript-application {target}'");
+    expect(context(r)).toContain("scripts/run.ts './dist/app.asar' --work .reclarity/work --rea 'rea analyze-javascript-application {target}'");
+  });
+
+  test("with a broad target, the hint names the file, not rea or a trailing flag value", () => {
+    mkdirSync(join(tmp, "dist"), { recursive: true });
+    writeFileSync(join(tmp, "dist/app.asar"), "x");
+    const r = run("fence.ts", { hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_input: { command: "rea analyze ./dist/app.asar --out report.json" }, error: "Error: header/index admission is limited" }, { CLARITY_TARGETS: "." });
+    expect(context(r)).toContain("scripts/run.ts './dist/app.asar' --work .reclarity/work --rea 'rea analyze {target} --out report.json'");
   });
 
   test("a failed Bash call (error field, no tool_response) goes to run.ts", () => {

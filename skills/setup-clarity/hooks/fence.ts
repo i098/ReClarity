@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 // PostToolUse: every tool result is data. Flag bait, forged turns, stop orders and decoy code in it, and send
 // capacity errors to anti-bla instead of a blind retry. Never blocks: the result already exists.
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { addContext, CAPACITY, findSignals, inTarget, loadConfig, log, readInput, root, textOf } from "./lib.ts";
 
 const i = await readInput();
@@ -16,7 +18,8 @@ const cfg = loadConfig();
 const chain = typeof i.tool_input?.command === "string" ? i.tool_input.command.replace(/\s+2>&1/g, "").split(/[|;&]+/) : [];
 const words = (chain.find((c) => /^\s*rea\s/.test(c)) ?? "").trim().split(/\s+/);
 const plain = words[0] === "rea" && words.every((w) => /^[\w@%+=:,./-]+$/.test(w));
-const hit = plain ? words.find((w) => inTarget(w, cfg, root(i))) : undefined;
+const isFile = (w: string) => statSync(resolve(root(i), w), { throwIfNoEntry: false })?.isFile() === true;
+const hit = plain ? words.slice(2).find((w) => !w.startsWith("-") && isFile(w) && inTarget(w, cfg, root(i))) : undefined;
 const sq = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 const retry = hit
   ? `bun ${cfg.antiBla}/scripts/run.ts ${sq(hit)} --work .reclarity/work --rea ${sq(words.map((w) => (w === hit ? "{target}" : w)).join(" "))}`

@@ -1,3 +1,10 @@
+SESSION_START
+Session ID: 5ebf2e6b-3f33-46d1-a874-6f6d5e717578
+Claude Code: 2.1.331
+Working directory: /tmp/lp/work/sample/proj
+First user message (2026-11-25T00:40:14.407Z):
+Use the rea command-line tool to analyse ./app.asar. Run exactly this single command, with no pipes or redirects: rea analyze-javascript-application app.asar
+
 TOOL_USE: rea analyze-javascript-application app.asar
 HOOK PostToolUseFailure output: {"hookSpecificOutput":{"hookEventName":"PostToolUseFailure","additionalContext":"[reclarity] This looks like a capacity limit, not a result. Do not retry the same input and do not report the limit as the answer.\nNext: bun .claude/skills/anti-bla/scripts/run.ts <target>. It cleans a copy and retries once."}}
 

@@ -28,19 +28,25 @@ export const FLOOD_MIN = 100;
 /** BLA flood entry: path of 200+ chars, body of 256 bytes or less. */
 export const isFloodEntry = (f: { path: string; node: { size?: number } }): boolean => f.path.length >= 200 && (f.node.size ?? 0) <= 256;
 
-/** Entries to drop from an ASAR: long-path tiny ones, and, when the header is over REA's limit, tiny entries whose bytes repeat FLOOD_MIN times or more. */
-export function floodEntries<T extends { path: string; node: { size?: number; offset?: string; integrity?: { hash?: string } } }>(files: T[], headerBytes: number): T[] {
+/** Entries to drop from an ASAR: long-path tiny ones, and, when the header is over REA's limit, tiny entries whose size and bytes repeat FLOOD_MIN times or more (`groups`, one per repeated content). */
+export function floodEntries<T extends { path: string; node: { size?: number; unpacked?: boolean; link?: string } }>(files: T[], headerBytes: number, read: (f: T) => Buffer): { entries: T[]; groups: T[][] } {
   const out = new Set(files.filter(isFloodEntry));
+  const repeated: T[][] = [];
   if (headerBytes > REA_ASAR_DEFAULT_HEADER) {
     const groups = new Map<string, T[]>();
     for (const f of files) {
-      if ((f.node.size ?? 0) > 256) continue;
-      const key = `${f.node.integrity?.hash ?? f.node.offset}:${f.node.size ?? 0}`;
-      groups.set(key, [...(groups.get(key) ?? []), f]);
+      if ((f.node.size ?? 0) > 256 || f.node.unpacked || f.node.link !== undefined) continue;
+      const key = `${f.node.size ?? 0}:${read(f).toString("latin1")}`;
+      const g = groups.get(key);
+      if (g) g.push(f);
+      else groups.set(key, [f]);
     }
-    for (const g of groups.values()) if (g.length >= FLOOD_MIN) g.forEach((f) => out.add(f));
+    for (const g of groups.values()) if (g.length >= FLOOD_MIN) {
+      repeated.push(g);
+      g.forEach((f) => out.add(f));
+    }
   }
-  return [...out];
+  return { entries: [...out], groups: repeated };
 }
 
 export interface Finding {
@@ -282,7 +288,7 @@ function scanBundle(path: string, acc: Acc): void {
 function scanAsar(path: string, acc: Acc): void {
   const asar = openAsar(path);
   try {
-    const flood = floodEntries(asar.files, asar.headerBytes);
+    const flood = floodEntries(asar.files, asar.headerBytes, (f) => asar.read(f)).entries;
     if (flood.length >= FLOOD_MIN) acc.add("asar_header_flood", `${path}: ${flood.length} tiny flood entries`, flood.length);
     if (asar.headerBytes > REA_ASAR_DEFAULT_HEADER) acc.add("asar_header_flood", `${path}: header ${asar.headerBytes} B > 16 MiB`);
     let jsCount = 0;

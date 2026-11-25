@@ -48,7 +48,7 @@ function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
   let asar: OpenAsar | undefined;
   try {
     const open = (asar = openAsar(src));
-    const flood = floodEntries(open.files, open.headerBytes);
+    const { entries: flood, groups } = floodEntries(open.files, open.headerBytes, (f) => open.read(f));
     const raise = (header: number) => {
       const need = Math.ceil(header / MIB) * MIB;
       if (header > REA_ASAR_DEFAULT_HEADER && need <= REA_ASAR_MAX) r.reaEnv.REA_ASAR_MAX_HEADER_BYTES = String(need);
@@ -64,7 +64,7 @@ function sanitizeAsar(src: string, dst: string, r: SanitizeReport): void {
     const packed = buildAsar(kept.map((f) => ({ path: f.path, node: f.node, data: f.node.unpacked || f.node.link !== undefined ? undefined : open.read(f) })));
     writeFileSync(dst, packed);
     raise(packed.readUInt32LE(12));
-    r.actions.push({ kind: "asar-flood-dropped", path: src, detail: `${flood.length} entries dropped, header ${open.headerBytes} B -> ${packed.readUInt32LE(12)} B` });
+    r.actions.push({ kind: "asar-flood-dropped", path: src, detail: `${flood.length} entries dropped${groups.map((g) => `; ${g.length} repeated, ${g[0]!.node.size ?? 0} B each, e.g. ${g.slice(0, 3).map((f) => f.path).join(", ")}`).join("")}, header ${open.headerBytes} B -> ${packed.readUInt32LE(12)} B` });
     for (const f of kept) if (SUSPECT.test(f.path) && !r.suspects.includes(f.path)) r.suspects.push(f.path);
   } catch (e) {
     copyFileSync(src, dst);

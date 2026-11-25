@@ -51,11 +51,11 @@ const executable = (target: string): boolean => {
 };
 
 /** Sanitize, then fold, into work/<tag>. Returns the cleaned path; coverage notes go to `notes`. */
-export function prepare(target: string, work: string, tag: string, withCoverage: boolean, notes: string[] = []): string {
+export function prepare(target: string, work: string, tag: string, withCoverage: boolean, notes: string[] = [], reaEnv: Record<string, string> = {}): string {
   const src = realpathSync(target);
   for (const d of [`${tag}-san`, `${tag}-clean`, `${tag}-quarantine`, `${tag}-quarantine.quarantine.json`]) rmSync(join(work, d), { recursive: true, force: true });
   const san = join(work, `${tag}-san`);
-  sanitize(src, san);
+  Object.assign(reaEnv, sanitize(src, san).reaEnv);
   const isDir = statSync(src).isDirectory();
   const sanitized = isDir ? san : join(san, basename(src));
   const folded = join(work, `${tag}-clean`, isDir ? "" : basename(src));
@@ -69,10 +69,10 @@ export function prepare(target: string, work: string, tag: string, withCoverage:
   return isDir ? quarantined : join(quarantined, basename(src));
 }
 
-function runRea(template: string, copy: string, ledger: Ledger): ReaAttempt {
+function runRea(template: string, copy: string, ledger: Ledger, env: Record<string, string>): ReaAttempt {
   const left = Math.max(1, ledger.maxSeconds - (Math.floor(Date.now() / 1000) - ledger.startedAt));
   const cmd = template.replaceAll("{target}", `'${copy.replaceAll("'", "'\\''")}'`);
-  const r = Bun.spawnSync(["sh", "-c", cmd], { timeout: left * 1000, killSignal: "SIGKILL", stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync(["sh", "-c", cmd], { env: { ...process.env, ...env }, timeout: left * 1000, killSignal: "SIGKILL", stdout: "pipe", stderr: "pipe" });
   const text = `${r.stdout.toString()}\n${r.stderr.toString()}`;
   return { copy, exitCode: r.exitCode ?? null, capacityError: isReaCapacityError(r.exitCode ?? null, r.stdout.toString(), r.stderr.toString()), output: asData(text.slice(-4000), "rea-output") };
 }
@@ -85,22 +85,23 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
   saved.target ??= real;
   const ledger: Ledger = saved.target === real ? saved : { ...newLedger(), target: real };
   const notes: string[] = [];
+  const reaEnv: Record<string, string> = {}; // e.g. REA_ASAR_MAX_HEADER_BYTES for an ASAR header the cleaning cannot shrink
   const s = scan(target);
   const cleaned = s.score > 0;
   const withCoverage = !!opts.coverage && executable(target);
   if (opts.coverage && !withCoverage) notes.push("coverage skipped: node runs plain JS and coverage.py runs Python source only, not an ASAR, a lone .pyc, WASM, BEAM or a native binary");
-  const prepared = cleaned ? prepare(target, opts.work, "a", withCoverage, notes) : target;
+  const prepared = cleaned ? prepare(target, opts.work, "a", withCoverage, notes, reaEnv) : target;
   const rep: RunReport = { tool: "anti-bla/run", target, scan: s, attempts: [], prepared, verdict: cleaned ? "cleaned" : "plain-rea", notes };
   if (opts.runtimeGuard) rep.runtimeGuard = runtimeGuard(target);
   if (opts.rea) {
     const first = check(ledger);
     if (!first.ok) return { ...rep, verdict: "capped", reason: first.reason };
     if (!admit(ledger, treeHash(prepared))) return { ...rep, verdict: "rea-failed", reason: "already tried these bytes; use a fresh work dir to re-run" };
-    let a = runRea(opts.rea, prepared, ledger);
+    let a = runRea(opts.rea, prepared, ledger, reaEnv);
     rep.attempts.push(a);
     if (a.capacityError) {
       const coverageOnRetry = hasSandbox() && executable(target);
-      const second = prepare(target, opts.work, "b", coverageOnRetry, notes);
+      const second = prepare(target, opts.work, "b", coverageOnRetry, notes, reaEnv);
       const secondHash = treeHash(second);
       if (ledger.tried.includes(inputHash(secondHash))) {
         rep.verdict = "rea-failed";
@@ -109,7 +110,7 @@ export function run(target: string, opts: { work: string; rea?: string; coverage
         const v = mayRetry(ledger, secondHash);
         if (v.ok && check(ledger).ok) {
           admit(ledger, secondHash);
-          a = runRea(opts.rea, second, ledger);
+          a = runRea(opts.rea, second, ledger, reaEnv);
           rep.attempts.push(a);
           rep.prepared = second;
           rep.verdict = a.capacityError ? "capacity-error-after-retry" : "ok";

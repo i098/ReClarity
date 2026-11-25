@@ -45,6 +45,13 @@ describe("retry once", () => {
     expect(isReaCapacityError(0, beam, "")).toBe(false);
   });
 
+  test("REA's text error envelope for the ASAR header limit is a capacity error; plain stdout that mentions it is not", () => {
+    const env = 'error: JavaScript application analysis failed\ncode: truncated\nmessage: "ASAR header/index admission is limited to 16 MiB / 16777216 bytes."';
+    expect(isReaCapacityError(1, env, "")).toBe(true);
+    expect(isReaCapacityError(1, `report\n${env}`, "")).toBe(false);
+    expect(isReaCapacityError(0, env, "")).toBe(false);
+  });
+
   test("the Go balanced framing error is a capacity error in REA's details.issues or in the message; other invalid_request is not", () => {
     const real = JSON.stringify({ code: "invalid_request", category: "invalid_input", message: "Analysis input is invalid. Check the arguments and try again.", details: { operation: "inspect_go_binary", issues: [{ path: ["path"], reason: "invalid_format", message: "Selected artifact /x/go.elf: Go module string framing is invalid" }] } });
     const bare = JSON.stringify({ code: "invalid_request", message: "Go module string framing is invalid" });

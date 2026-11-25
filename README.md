@@ -9,7 +9,7 @@ ReClarity is an **anti-BLA** skill and toolkit. [BLA](https://github.com/qybaihe
 
 ## Side by side: plain REA and REA plus ReClarity
 
-PLACEHOLDER_SBS
+https://github.com/user-attachments/assets/bbd3906e-f2ef-4b76-90dd-4480828e08f8
 
 The video shows two sessions of Claude Opus 5.5 on the same hardened build, left to right: plain REA, then REA plus ReClarity. Plain REA stopped at the ASAR limit with 0 of 3 answers. REA plus ReClarity gave 3 of 3 correct answers. One run each; details in [docs/e2e-recording.md](docs/e2e-recording.md). The video is cut from that recording, and the left pane runs at 2x speed and the right pane at 12x. Use the player controls to scrub.
 

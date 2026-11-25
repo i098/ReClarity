@@ -91,3 +91,38 @@ Second measured run, an ASAR with a real small JS app (`dist/main.js` and `packa
 | REA wall time, exit, verdict | 74 s, 0, `ok` |
 | REA input | "Processing 2 selected application files": `dist/main.js` and `package.json` |
 | Real files in the cleaned copy | `dist/main.js`, `package.json`, byte-identical to the original (compared by read-back) |
+
+## New-user end-to-end check (2026-11-25)
+
+Setup, from a fresh empty project: Claude Code 2.1.332, Sonnet 5.5, REA (`rea-agents`) 6.10.1.
+`npx skills add i098/ReClarity --skill anti-bla --skill setup-clarity -a claude-code -y` installed `main` at `b510c3a`.
+Then `bun install` in the `anti-bla` folder and `bun .claude/skills/setup-clarity/hooks/install.ts --target app.asar`.
+The sample `app.asar` has `dist/main.js`, `package.json` and 90000 one-byte flood entries (22215232 B header).
+Each session was a new `claude -p` run with `--permission-mode bypassPermissions` and the hooks from `.claude/settings.json`.
+
+Result, run 6 (session `0ed8cfaa-becc-43d9-ba14-a73d7b8f8640`, wall time 65 s): pass.
+First message: `Use REA (rea analyze-javascript-application app.asar) to analyze this app and tell me what it does.` It does not name ReClarity or anti-bla.
+1. The agent ran `rea analyze-javascript-application <abs path>/app.asar`. REA failed: `ASAR header/index admission is limited to 16 MiB`.
+2. `fence.ts` fired on that call (`PostToolUse`, `capacity: true`) and returned the complete command: `bun .claude/skills/anti-bla/scripts/run.ts '<abs path>/app.asar' --work .reclarity/work --rea 'rea analyze-javascript-application {target}'`.
+3. The agent loaded the `anti-bla` skill, ran `scan.ts` (score 40, `asar_header_flood`), then ran `run.ts "$PWD/app.asar" --work .reclarity/work --rea 'rea analyze-javascript-application {target}'`.
+4. `run.ts` cleaned a copy and ran REA on it: exit 0, verdict `ok`, `capacityError: false`.
+5. The agent gave a correct answer: `tiny-notes`, a 779 B module with `slugify`, `wordCount`, `checkLicense` and `rareExport`, and no Electron API calls.
+
+Proof: [transcript](proof/autotrigger-e2e-transcript.txt), [hook log](proof/autotrigger-e2e-hooks.jsonl), [terminal recording](proof/autotrigger-e2e.cast) (`asciinema play`).
+
+Seven sessions in total, same project, same sample:
+
+| Run | First message | First REA call | Hint form | `run.ts` verdict | Wall time (agent) |
+|---|---|---|---|---|---|
+| 1 | `Analyze the app in this folder (app.asar) with REA and tell me what it does and which entry points it has.` | none; read `SKILL.md` first | placeholder, fired on the `SKILL.md` read | `ok` | 92 s |
+| 2 | `Run rea on app.asar and tell me what the app does.` | none; `cat SKILL.md` first | placeholder, fired on `cat SKILL.md` | `ok` | 44 s |
+| 3 | same as run 2 | none; `Skill anti-bla` first | none (hook did not fire) | `ok` | 45 s |
+| 4 | same as run 2 | none; `cat SKILL.md` first | placeholder, fired on `cat SKILL.md` | exit 0 | 52 s |
+| 5 | `Use REA (rea analyze-javascript-application app.asar) to analyze this app and tell me what it does.` | failed on header limit | complete command | `ok` | 49 s |
+| 6 | same as run 5 | failed on header limit | complete command | `ok` | 59 s |
+| 7 | same as run 5 | failed on header limit | placeholder (the command has `$(date +%s)`) | `ok` | 62 s |
+
+- In runs 1 to 4 the first message did not name the command. The agent listed `.claude/skills` and read the `anti-bla` skill before it called REA, so the failed-REA hook path did not run. The agent still reached `run.ts` and a real answer, by way of the skill.
+- In runs 5 to 7 the hook fired on the failed REA call, and the agent ran `run.ts` and got a real answer. Runs 5 and 6 got the complete command. Run 7 got the placeholder form, because the failed command has `$(...)`, which the rebuild does not accept.
+- The agent did not paste the hinted command word for word: it ran `run.ts` with the same arguments from another working directory or with `$PWD` for the target.
+- Limits: one model, one sample, 7 sessions, `claude -p` (not the interactive UI). A user-level hook (`subcon-agents/agent-hook`) that is not part of ReClarity exited 127 in each session.

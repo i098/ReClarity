@@ -40,16 +40,16 @@ bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-jav
 
 ## Measured: ReClarity vs LASIK on BLA-hardened builds
 
-Prepared copies of 5 JS seeds and 3 release files (ASAR, Python, SQLite) count as correct when the program output equals the unhardened app's output:
+Correct means the program output equals the unhardened app's output (5 JS seeds, 3 release files):
 
 | BLA | Arm | JS seeds correct | Release files correct | Release ASAR header |
 | --- | --- | --- | --- | --- |
-| 3.2.1 | LASIK | 0 of 5 | 2 of 3 | 1 KB (ASAR crash) |
+| 3.2.1 | LASIK | 0 of 5 | 2 of 3 | 1 KB |
 | 3.2.1 | ReClarity | 5 of 5 | 3 of 3 | 0.7 KB |
-| 3.5.9 | LASIK | 0 of 5 | 2 of 3 | 20.0 MB (refused) |
+| 3.5.9 | LASIK | 0 of 5 | 2 of 3 | 20.0 MB |
 | 3.5.9 | ReClarity | 5 of 5 | 3 of 3 | 4.2 MB |
 
-Plain REA refuses the unmodified ASAR (17.4 MB on 3.2.1, 20.0 MB on 3.5.9; cap 16 MiB). One run per cell; correct means oracle output, not an agent answer. Full tables, method and limits: [docs/measured-comparison.md](docs/measured-comparison.md).
+One run per cell, no agent run; plain REA, method and limits are in [docs/measured-comparison.md](docs/measured-comparison.md).
 
 ## End-to-end recording
 

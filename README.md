@@ -103,8 +103,6 @@ npx skills add i098/ReClarity --skill setup-clarity   # then: bun <skill>/hooks/
 
 Needs [Bun](https://bun.sh) and, for coverage, `bwrap`. See [docs/usage.md](docs/usage.md).
 
-**Agents:** follow [setup.md](setup.md) to install the tools, run the tests and install the skill.
-
 ## Run
 
 ```bash

@@ -76,6 +76,19 @@ Measured with real REA, `bun run.ts app.asar --work w --rea 'rea analyze-javascr
 | REA exit code | null (killed) | 0 |
 | Verdict | `rea-failed` | `ok` |
 
-Note: `90000 entries dropped, header 21662601 B -> 12 B`. The sample has no real file, so REA found 0 sources.
+Row above: the empty sample (90000 flood entries, no real file). Note: `90000 entries dropped, header 21662601 B -> 12 B`. The sample has no real file, so REA found 0 sources.
 New Claude Code session (b420fc95-7e72-4bdb-891c-b467a86f148e, first message does not name ReClarity): the agent ran `run.ts` and REA finished; see the [transcript](proof/asar-flood-cleaned-transcript.txt). One session, one sample.
 
+
+Second measured run, an ASAR with a real small JS app (`dist/main.js` and `package.json` from the test fixtures) plus 90000 flood entries (22013342 B header), same `run.ts` command:
+
+| | Result |
+|---|---|
+| Header before / after cleaning | 22013342 B / 108 B |
+| Entries dropped (run note) | 90000 |
+| `REA_ASAR_MAX_HEADER_BYTES` | not set |
+| REA wall time, exit, verdict | 74 s, 0, `ok` |
+| REA input | "Processing 2 selected application files": `dist/main.js` and `package.json` |
+| Real files in the cleaned copy | `dist/main.js`, `package.json`, byte-identical to the original (compared by read-back) |
+
+Limit of the rule: it applies only when the header is over 16 MiB. Then real files of 256 B or less with 100 or more identical copies (same bytes, same size) are dropped too.

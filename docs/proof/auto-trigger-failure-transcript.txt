@@ -1,5 +1,4 @@
 TOOL_USE: rea analyze-javascript-application app.asar
-HOOK PostToolUseFailure output: 
 HOOK PostToolUseFailure output: {"hookSpecificOutput":{"hookEventName":"PostToolUseFailure","additionalContext":"[reclarity] This looks like a capacity limit, not a result. Do not retry the same input and do not report the limit as the answer.\nNext: bun .claude/skills/anti-bla/scripts/run.ts <target>. It cleans a copy and retries once."}}
 
 TOOL_RESULT: Exit code 1

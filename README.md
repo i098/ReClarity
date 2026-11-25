@@ -7,6 +7,12 @@ ReClarity is an **anti-BLA** skill and toolkit. [BLA](https://github.com/qybaihe
 
 **Agents:** follow [setup.md](setup.md) for exact setup steps from a clean machine.
 
+## Side by side: plain REA and REA plus ReClarity
+
+PLACEHOLDER_SBS
+
+The video shows two sessions of Claude Opus 5.5 on the same hardened build, left to right: plain REA, then REA plus ReClarity. Plain REA stopped at the ASAR limit with 0 of 3 answers. REA plus ReClarity gave 3 of 3 correct answers. One run each; details in [docs/e2e-recording.md](docs/e2e-recording.md). The video is cut from that recording, and the left pane runs at 2x speed and the right pane at 12x. Use the player controls to scrub.
+
 ## Install
 
 ```bash
@@ -76,13 +82,11 @@ Correct means the program output equals the unhardened app's output (5 JS seeds,
 
 One run per cell, no agent run; plain REA, method and limits are in [docs/measured-comparison.md](docs/measured-comparison.md).
 
-## End-to-end recording
+## Auto-trigger recording
 
 https://github.com/user-attachments/assets/903bf115-3d72-4181-9e47-de52aae9f505
 
 The video plays the [terminal recording](docs/proof/autotrigger-e2e.cast) of the auto-trigger check above at 4x speed. Use the player controls to scrub.
-
-An older recording (Claude Opus 5.5, one run each) compared plain REA, which stopped at the ASAR limit with 0 of 3 answers, with REA plus ReClarity, which gave 3 of 3 correct answers. See [docs/e2e-recording.md](docs/e2e-recording.md) ([mp4](docs/media/reclarity-e2e-v3.mp4)).
 
 ## Docs
 

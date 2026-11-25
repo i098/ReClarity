@@ -120,7 +120,7 @@ bun skills/anti-bla/scripts/run.ts <target> --work /tmp/w --rea "rea analyze-jav
 - [What it does and skills](docs/skills.md): the three skills and when to use each.
 - [End-to-end recording](docs/e2e-recording.md): A/B run with a recording.
 - [Measured comparison](docs/measured-comparison.md): plain REA, LASIK and ReClarity on BLA-hardened builds.
-- [Auto-trigger](docs/auto-trigger.md): why the fence hook missed failed calls.
+- [Auto-trigger](docs/auto-trigger.md): why the fence hook missed failed calls, and the live check.
 
 ## Contribute
 

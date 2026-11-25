@@ -28,6 +28,26 @@ describe("sanitize", () => {
     expect(scan(join(tmp, "out1", "app.asar")).score).toBe(0);
   });
 
+  test("ASAR: header over 16 MiB from repeated short-path tiny entries is cut under the limit, no env raise", () => {
+    const real = Buffer.from("console.log(1)");
+    const pad = "x".repeat(30000);
+    const entries = [{ path: "dist/main.js", node: {}, data: real }];
+    for (let i = 0; i < 600; i++) entries.push({ path: `d/f${i}.js`, node: { integrity: { hash: "ab" }, pad } as never, data: Buffer.from("1") });
+    const src = join(tmp, "big.asar");
+    writeFileSync(src, buildAsar(entries));
+    const r = sanitize(src, join(tmp, "out9"));
+    const orig = openAsar(src);
+    expect(orig.headerBytes).toBeGreaterThan(16 * 1024 * 1024);
+    orig.close();
+    const out = openAsar(join(tmp, "out9", "big.asar"));
+    expect(out.headerBytes).toBeLessThan(16 * 1024 * 1024);
+    expect(out.files.map((f) => f.path)).toEqual(["dist/main.js"]);
+    expect(out.read(out.files[0]!).equals(real)).toBe(true);
+    out.close();
+    expect(r.reaEnv.REA_ASAR_MAX_HEADER_BYTES).toBeUndefined();
+    expect(r.actions[0]!.detail).toContain("600 entries dropped");
+  });
+
   test("ASAR: a kept entry with an enclave-like name is reported as a suspect and stays in the archive", () => {
     const pad = "a".repeat(256);
     const shards = Array.from({ length: 120 }, (_, i) => ({ path: `enclave/shards/ring0-${pad}_${i}.json`, node: {}, data: Buffer.from("{}") }));

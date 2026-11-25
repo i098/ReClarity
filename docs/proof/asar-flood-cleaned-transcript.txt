@@ -1,0 +1,20 @@
+SESSION_START
+Session ID: b420fc95-7e72-4bdb-891c-b467a86f148e
+Claude Code: 2.1.331 (model: sonnet, `claude -p`, permission mode bypassPermissions)
+Working directory: /tmp/lp/work/p43 (fresh copy of the ASAR sample, 21662601 B header; ReClarity skills and hooks from this branch)
+First user message (2026-11-25):
+Use rea (rea analyze-javascript-application ./app.asar) to analyse ./app.asar and tell me what the application contains.
+
+Condensed. Tool results are cut; the raw session is not committed.
+The session ended on its own after 121 s wall time, exit 0.
+
+TOOL_USE: ls -la app.asar && rea analyze-javascript-application ./app.asar 2>&1 | head -200
+TOOL_RESULT: REA error, code truncated: the ASAR header is over 16 MiB.
+TOOL_USE: skill anti-bla (the agent chose it; the fence capacity hint did not show in this run's output)
+TOOL_USE: bun scan.ts app.asar -> score 40, asar_header_flood, count 90001
+TOOL_USE: bun run.ts app.asar --work .reclarity/work --rea "rea analyze-javascript-application {target}"
+TOOL_RESULT: REA ran on the cleaned copy and finished (verdict ok). Note: "90000 entries dropped, header 21662601 B -> 12 B".
+TOOL_USE x2: the agent parsed the original header by hand: 300 directories, 90000 files of 1 byte each, no other entry.
+Agent answer: app.asar contains no application. 90,000 one-byte flood files in 300 directories; REA on the cleaned copy reported 0 sources, 0 routes, 0 occurrences.
+
+Limits: one session, one sample. The sample holds only flood entries, so the cleaned copy holds no real file; "real files stay identical" is proved by the unit test, not by this sample. The agent reached run.ts through the skill, not through the fence hint.

@@ -20,6 +20,6 @@ The transcript omits one empty `PostToolUseFailure output` line of unknown sourc
 
 Limits:
 - The prompt asked for exactly one command, so the agent did not run `run.ts`.
-- The recorded hint does not retry REA as shown. `run.ts` requires `--work` for the output directory and `--rea` for the REA command.
-- This check used one model and one archive. With `--max-semantic-nodes 100`, REA reports `budget exceeded` but exits with code 0, which uses `PostToolUse`.
+- The recorded hint does not retry REA as shown. `run.ts` requires `--work` and invokes REA only if you supply `--rea`.
+- This check used one model and one archive.
 - omp does not read `.claude/settings.json` hooks, so this check covers Claude Code only.

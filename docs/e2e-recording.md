@@ -1,6 +1,6 @@
 # End-to-end recording
 
-The first README video shows two live runs side by side. Both agents got the same prompt, on the same model, and started at the same time. The left pane is plain REA. The right pane is REA with ReClarity installed.
+The first README video shows two live runs side by side. Both agents got the same prompt, on the same model, and started at the same time. The left pane is labelled "REA with BLA" (plain REA on the BLA-hardened build). The right pane is labelled "REA with BLA + ReClarity" (the same build, with ReClarity installed).
 
 - Model: Claude Opus 5.5 (`claude-opus-5-5`) in Claude Code 2.1.332. REA 6.10.1. Both panes ran on one host at the same time.
 - Input: one BLA-hardened ASAR with a 17.4 MB header (4000 flood entries, over the 16 MiB REA limit). Both folders held the same file.
@@ -11,11 +11,11 @@ The first README video shows two live runs side by side. Both agents got the sam
 
 What the runs show (one run each):
 
-| | Plain REA | REA + ReClarity |
+| | REA with BLA | REA with BLA + ReClarity |
 | --- | --- | --- |
 | First REA error | 0:38: `ASAR header/index admission is limited to 16 MiB` | 0:22: the same error |
 | Next step | The agent sets `REA_ASAR_MAX_HEADER_BYTES` to 32 MiB and runs REA again. REA ends after 64 s with a 266 MB evidence file. | The hook says "capacity limit, not a result" and names `run.ts`. The agent loads `anti-bla`, scans (score 100) and runs `run.ts`. REA exits 0 on a cleaned copy. |
-| Answer | 7:21. The agent decoded the JS by hand: it searched the disk for a parser, installed `acorn` and wrote its own folding script. | 1:47. The agent read the cleaned copy. |
+| Answer | 7:21. The agent decoded the JS with its own script: it searched the disk for a parser, installed `acorn` and wrote its own folding script. | 1:47. The agent read the cleaned copy. |
 
 Both answers name `tiny-notes` 1.0.0, a small notes app padded with decoys. This recording does not grade the answers against a ground truth. It shows the path and the time each agent took.
 
@@ -24,9 +24,9 @@ Files, in [`proof/side-by-side/`](proof/side-by-side): [`plain-rea.cast`](proof/
 Limits:
 
 - One run each, one model, one hardened build. The agent runs are not deterministic. Another run can take another path.
-- The plain agent was free to set the REA limit variable and did. A plain agent that does not set it stops at the first error, as in the earlier recording below.
+- The left agent was free to set the REA limit variable and did. An agent that does not set it stops at the first error, as in the earlier recording below.
 - The build is a small ASAR with a flood header, not a native app.
-- The captions were written by hand from the pane text and checked on nine frames by Claude Opus 5.5.
+- The captions were written by hand from the pane text and checked on nine frames (and again on seven frames after the relabel) by Claude Opus 5.5.
 
 ## Earlier recording (2026-11-12)
 

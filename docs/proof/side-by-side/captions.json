@@ -1,7 +1,7 @@
 {
  "titles": {
-  "left": "A  Plain REA  |  Claude Opus 5.5",
-  "right": "B  REA + ReClarity  |  Claude Opus 5.5"
+  "left": "REA with BLA  |  Claude Opus 5.5",
+  "right": "REA with BLA + ReClarity  |  Claude Opus 5.5"
  },
  "captions": [
   {
@@ -38,7 +38,7 @@
    "side": "left",
    "from": 112,
    "to": 116,
-   "text": "REA finished after 64 s"
+   "text": "REA output arrives at 112 s\n(the run began at 48 s)"
   },
   {
    "side": "left",
@@ -50,7 +50,7 @@
    "side": "left",
    "from": 159,
    "to": 209,
-   "text": "Agent reads the extracted JS files."
+   "text": "Agent reads main.js, preload.js\nand bridge.js from the archive."
   },
   {
    "side": "left",
@@ -68,7 +68,7 @@
    "side": "left",
    "from": 441,
    "to": 999,
-   "text": "Agent finished after 441 s (END line),\nafter hand decoding."
+   "text": "Agent finished after 441 s (duration_ms),\nafter decoding with its own script."
   },
   {
    "side": "right",
@@ -134,7 +134,7 @@
    "side": "right",
    "from": 107,
    "to": 999,
-   "text": "Answer at 1:47 (END: 108 s):\ntiny-notes 1.0.0, padded with decoys."
+   "text": "Answer at 1:47:\ntiny-notes 1.0.0, padded with decoys."
   }
  ]
 }

@@ -1,7 +1,8 @@
 {
  "titles": {
   "left": "REA with BLA  |  Claude Opus 5.5",
-  "right": "REA with BLA + ReClarity  |  Claude Opus 5.5"
+  "right": "REA with BLA + ReClarity  |  Claude Opus 5.5",
+  "build": "build: BLA-hardened app.asar, 17.4 MB header"
  },
  "captions": [
   {

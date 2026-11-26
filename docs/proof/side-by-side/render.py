@@ -85,7 +85,8 @@ for f in range(n):
     d.rectangle([958, 0, 961, H], fill=(70, 74, 82))
     for x, side in ((0, "left"), (960, "right")):
         d.rectangle([x, 0, x + 959, TOP - 1], fill=(30, 34, 42))
-        d.text((x + 24, 12), titles[side], font=BOLD, fill=(255, 255, 255))
+        d.text((x + 24, 6), titles[side], font=BOLD, fill=(255, 255, 255))
+        d.text((x + 24, 32), titles["build"], font=FONT, fill=(160, 165, 175))
         d.text((x + 800, 18), "real %d:%02d" % (rt // 60, rt % 60), font=FONT, fill=(255, 190, 70))
         txt = [c["text"] for c in caps["captions"] if c["side"] == side and c["from"] <= rt < c["to"]]
         if not txt:

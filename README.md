@@ -9,7 +9,7 @@ ReClarity is an **anti-BLA** skill and toolkit. [BLA](https://github.com/qybaihe
 
 ## Side by side: REA with BLA, and REA with BLA + ReClarity
 
-https://github.com/user-attachments/assets/5125b2f8-b9cb-4170-8eaa-c7c14ec9d063
+https://github.com/user-attachments/assets/2e0db108-73c8-4d9e-ab13-d5953bb93be3
 
 ## Install
 

@@ -11,8 +11,6 @@ ReClarity is an **anti-BLA** skill and toolkit. [BLA](https://github.com/qybaihe
 
 https://github.com/user-attachments/assets/5125b2f8-b9cb-4170-8eaa-c7c14ec9d063
 
-The video shows two live runs that started together: Claude Opus 5.5, the same prompt, the same hardened build, left pane "REA with BLA" (plain REA on the BLA-hardened build) and right pane "REA with BLA + ReClarity". Both panes play at the same speed; waits over 1.5 s are cut on both, and the `real` clock shows true time. Both runs hit the REA 16 MiB ASAR limit. REA with BLA: the agent raised the limit, REA ran 64 s, and the agent decoded the code with its own script for an answer at 7:21. REA with BLA + ReClarity: the hook named `run.ts`, REA ran on a cleaned copy, and the answer came at 1:47. One run each; details in [docs/e2e-recording.md](docs/e2e-recording.md). Use the player controls to scrub.
-
 ## Install
 
 ```bash
@@ -33,25 +31,17 @@ From a clone of this repository, use `skills/anti-bla/scripts/run.ts`.
 
 ## Auto-trigger: REA fails, the hook gives the fix
 
-After the hooks are installed, you do not need to name ReClarity. When REA fails on a capacity limit, the `fence` hook gives the agent the complete `run.ts` command. The agent runs it.
+https://github.com/user-attachments/assets/903bf115-3d72-4181-9e47-de52aae9f505
 
 ```mermaid
-flowchart LR
-    A[Agent runs REA on the build] --> B{REA fails on a<br/>capacity limit?}
+flowchart TD
+    A[Agent runs REA] --> B{Capacity limit?}
     B -- no --> Z[Result is real]
-    B -- yes --> C[fence hook reads<br/>PostToolUseFailure]
-    C --> D[Hook prints the full<br/>run.ts command]
-    D --> E[Agent runs run.ts]
-    E --> F[run.ts scans, cleans a copy,<br/>runs REA on the copy]
-    F --> G[REA exits 0, agent answers]
+    B -- yes --> C[Hook gives run.ts command]
+    C --> D[Agent runs run.ts]
+    D --> E[Cleaned copy]
+    E --> F[REA exits 0]
 ```
-
-1. Install as in [Install](#install).
-2. Start Claude Code in the project and ask: `Use REA (rea analyze-javascript-application app.asar) to analyze this app and tell me what it does.`
-3. REA fails with `ASAR header/index admission is limited to 16 MiB`. The hook adds the `run.ts` command to the agent context.
-4. The agent runs `run.ts`. REA runs on the cleaned copy.
-
-Recorded check (2026-11-25): 1 session, a BLA-hardened ASAR with a 22 MB header, Claude Code and Sonnet 5.5. REA failed, the hook gave the command, REA ran on the cleaned copy and exited 0 in 65 s. The agent gave a correct answer. Limits: one model, one sample; see [docs/auto-trigger.md](docs/auto-trigger.md). Proof files: [recording](docs/proof/autotrigger-e2e.cast) (`asciinema play`), [hook log](docs/proof/autotrigger-e2e-hooks.jsonl), [transcript](docs/proof/autotrigger-e2e-transcript.txt).
 
 ## BLA de-obfuscation: what it does
 
@@ -81,12 +71,6 @@ Correct means the program output equals the unhardened app's output (5 JS seeds,
 | 3.5.9 | ReClarity | 5 of 5 | 3 of 3 | 4.2 MB |
 
 One run per cell, no agent run; plain REA, method and limits are in [docs/measured-comparison.md](docs/measured-comparison.md).
-
-## Auto-trigger recording
-
-https://github.com/user-attachments/assets/903bf115-3d72-4181-9e47-de52aae9f505
-
-The video plays the [terminal recording](docs/proof/autotrigger-e2e.cast) of the auto-trigger check above at 4x speed. Use the player controls to scrub.
 
 ## Docs
 

@@ -11,7 +11,7 @@ ReClarity is an **anti-BLA** skill and toolkit. [BLA](https://github.com/qybaihe
 
 https://github.com/user-attachments/assets/bbd3906e-f2ef-4b76-90dd-4480828e08f8
 
-The video shows two sessions of Claude Opus 5.5 on the same hardened build, left to right: plain REA, then REA plus ReClarity. Plain REA stopped at the ASAR limit with 0 of 3 answers. REA plus ReClarity gave 3 of 3 correct answers. One run each; details in [docs/e2e-recording.md](docs/e2e-recording.md). The video is cut from that recording, and the left pane runs at 2x speed and the right pane at 12x. Use the player controls to scrub.
+The video shows two live runs that started together: Claude Opus 5.5, the same prompt, the same hardened build, one folder with plain REA (left) and one with REA plus ReClarity (right). Both panes play at the same speed; waits over 1.5 s are cut on both, and the `real` clock shows true time. Both runs hit the REA 16 MiB ASAR limit. Plain REA: the agent raised the limit, REA ran 64 s, and the agent decoded the code by hand for an answer at 7:21. REA plus ReClarity: the hook named `run.ts`, REA ran on a cleaned copy, and the answer came at 1:47. One run each; details in [docs/e2e-recording.md](docs/e2e-recording.md). Use the player controls to scrub.
 
 ## Install
 

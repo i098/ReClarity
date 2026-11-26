@@ -1,0 +1,134 @@
+{
+ "titles": {
+  "left": "A  Plain REA  |  Claude Opus 5.5",
+  "right": "B  REA + ReClarity  |  Claude Opus 5.5"
+ },
+ "captions": [
+  {
+   "side": "left",
+   "from": 0,
+   "to": 18.4,
+   "text": "Same prompt for both agents.\nPlain REA: no ReClarity hooks."
+  },
+  {
+   "side": "left",
+   "from": 18.4,
+   "to": 32.8,
+   "text": "Agent reads REA help"
+  },
+  {
+   "side": "left",
+   "from": 32.8,
+   "to": 39,
+   "text": "Agent runs REA on app.asar"
+  },
+  {
+   "side": "left",
+   "from": 39,
+   "to": 48,
+   "text": "REA stops: ASAR header limit 16 MiB\n(code: truncated). No analysis."
+  },
+  {
+   "side": "left",
+   "from": 48,
+   "to": 112,
+   "text": "Agent sets REA_ASAR_MAX_HEADER_BYTES\nto 32 MiB and runs REA again."
+  },
+  {
+   "side": "left",
+   "from": 112,
+   "to": 116,
+   "text": "REA finished after 64 s"
+  },
+  {
+   "side": "left",
+   "from": 116,
+   "to": 209,
+   "text": "REA wrote a 266 MB evidence file.\nAgent reads the archive with Python."
+  },
+  {
+   "side": "left",
+   "from": 209,
+   "to": 333,
+   "text": "Agent looks for a JS parser on disk;\na find command runs 2 min."
+  },
+  {
+   "side": "left",
+   "from": 333,
+   "to": 441,
+   "text": "Agent installs acorn and writes its\nown constant-folding script."
+  },
+  {
+   "side": "left",
+   "from": 441,
+   "to": 999,
+   "text": "Answer at 7:21 (END: 441 s),\nafter hand decoding."
+  },
+  {
+   "side": "right",
+   "from": 0,
+   "to": 1.8,
+   "text": "REA + ReClarity installed."
+  },
+  {
+   "side": "right",
+   "from": 1.8,
+   "to": 18.4,
+   "text": "SessionStart hook lists the rules."
+  },
+  {
+   "side": "right",
+   "from": 18.4,
+   "to": 22.4,
+   "text": "Agent runs REA on app.asar"
+  },
+  {
+   "side": "right",
+   "from": 22.4,
+   "to": 25.5,
+   "text": "REA reports an error. Hook: \"capacity limit,\nnot a result\" + run.ts command."
+  },
+  {
+   "side": "right",
+   "from": 25.5,
+   "to": 32,
+   "text": "Agent loads the anti-bla skill"
+  },
+  {
+   "side": "right",
+   "from": 32,
+   "to": 39,
+   "text": "Agent runs scan.ts"
+  },
+  {
+   "side": "right",
+   "from": 39,
+   "to": 45,
+   "text": "Scan: score 100, hardened,\n4000 flood entries"
+  },
+  {
+   "side": "right",
+   "from": 45,
+   "to": 65,
+   "text": "Agent runs run.ts on app.asar\n(output not shown yet)"
+  },
+  {
+   "side": "right",
+   "from": 65,
+   "to": 71,
+   "text": "run.ts finished: exit 0"
+  },
+  {
+   "side": "right",
+   "from": 71,
+   "to": 107,
+   "text": "Hook marks decoy text in the output\nas data. Agent reads the clean copy."
+  },
+  {
+   "side": "right",
+   "from": 107,
+   "to": 999,
+   "text": "Answer at 1:47: tiny-notes 1.0.0,\na small notes app padded with decoys."
+  }
+ ]
+}

@@ -1,4 +1,4 @@
-# ReClarity: anti-BLA toolkit for AI reverse-engineering agents
+# ReClarity: anti-BLA toolkit for REA
 
 [![Featured in Awesome REA](https://img.shields.io/badge/Featured%20in-Awesome%20REA-yellow)](https://github.com/AIshihzong/awesome-reverse-engineer-anything)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)

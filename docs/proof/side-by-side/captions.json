@@ -43,8 +43,14 @@
   {
    "side": "left",
    "from": 116,
+   "to": 159,
+   "text": "REA finished. Agent reads the archive\nindex with Python."
+  },
+  {
+   "side": "left",
+   "from": 159,
    "to": 209,
-   "text": "REA wrote a 266 MB evidence file.\nAgent reads the archive with Python."
+   "text": "Agent reads the extracted JS files."
   },
   {
    "side": "left",
@@ -62,13 +68,13 @@
    "side": "left",
    "from": 441,
    "to": 999,
-   "text": "Answer at 7:21 (END: 441 s),\nafter hand decoding."
+   "text": "Agent finished after 441 s (END line),\nafter hand decoding."
   },
   {
    "side": "right",
    "from": 0,
    "to": 1.8,
-   "text": "REA + ReClarity installed."
+   "text": "REA + ReClarity, same prompt."
   },
   {
    "side": "right",
@@ -128,7 +134,7 @@
    "side": "right",
    "from": 107,
    "to": 999,
-   "text": "Answer at 1:47: tiny-notes 1.0.0,\na small notes app padded with decoys."
+   "text": "Answer at 1:47 (END: 108 s):\ntiny-notes 1.0.0, padded with decoys."
   }
  ]
 }

@@ -151,7 +151,9 @@ function jsRows(ver: string, bla: string): Record<string, Cell[]> {
     const before = treeBytes(dist);
     const cells: Cell[] = [];
     const base = (arm: Arm) => ({ arm, bytesBefore: before });
-    cells.push({ ...base("plain"), behaviour: jsOracle(dist), prepMs: 0, bytesAfter: before, trapWords: trapCount(dist) });
+    const plain = jsOracle(dist);
+    if (plain === "crash") throw new Error(`plain build did not pass the check for ${ver} ${seed}: ${dist}`);
+    cells.push({ ...base("plain"), behaviour: plain, prepMs: 0, bytesAfter: before, trapWords: trapCount(dist) });
     const l = runLasik(dist, `${dist}.lasik`);
     cells.push(l.ok ? { ...base("lasik"), behaviour: jsOracle(`${dist}.lasik`), prepMs: l.ms, bytesAfter: treeBytes(`${dist}.lasik`), trapWords: trapCount(`${dist}.lasik`) } : { ...base("lasik"), behaviour: "tool-failed", prepMs: l.ms, bytesAfter: 0, trapWords: 0, note: l.note });
     const c = runReclarity(dist, `${ver}-${seed}`);
@@ -242,6 +244,10 @@ function formatRows(): Record<string, { arm: Arm; result: "restored" | "changed"
 }
 
 mkdirSync(work, { recursive: true });
+// The repo's package.json says "type": "module"; a work folder inside the repo would make Node load the
+// hardened lib.js (CommonJS) as an ES module. Pin the work folder to CommonJS so the result does not
+// depend on where the work folder is.
+writeFileSync(join(work, "package.json"), JSON.stringify({ type: "commonjs" }));
 const git = (d: string) => {
   const h = sh(`git -C ${d} rev-parse HEAD`);
   const s = sh(`git -C ${d} status --porcelain`);
